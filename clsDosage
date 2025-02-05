@@ -1,0 +1,3353 @@
+'class module: Dosage
+
+' By Robert.Brownsmith@nhs.net
+' Converts a dose string to a FIHR STU3 compatible JSON
+
+'declare user defined data types - FHIR release 3. https://hl7.org/fhir/STU3/dosage.html
+
+'https://learn.microsoft.com/en-us/office/vba/language/reference/user-interface-help/type-statement
+'https://build.fhir.org/dosage.html
+'https://build.fhir.org/dosage-definitions.html#Dosage.timing
+'https://build.fhir.org/datatypes-definitions.html#Timing.repeat.bounds[x]
+'https://build.fhir.org/formats.html#choice
+'https://build.fhir.org/datatypes.html#Duration
+'https://build.fhir.org/datatypes.html#Range
+'https://build.fhir.org/datatypes.html#Period
+
+
+'define types
+Private Type quantity
+    value As Double
+    comparator As String
+    unit As String
+    system As String
+    code As String
+End Type
+
+Private Type simpleQuantity
+    value As Double
+    unit As String
+    system As String
+    code As String
+End Type
+
+Private Type tRange
+    low As simpleQuantity
+    high As simpleQuantity
+End Type
+
+Private Type ratio
+    numerator As quantity
+    denominator As simpleQuantity
+End Type
+
+'codeable concept
+Private Type coding
+    system As String
+    code As String
+    display As String
+End Type
+
+'code - defined set of values in FIHR
+
+'https://hl7.org/fhir/valueset-units-of-time.html
+Enum unitsOfTime
+bDefault
+s
+Min
+h
+d
+wk
+mo
+a
+End Enum
+
+'https://hl7.org/fhir/valueset-days-of-week.html
+Enum daysOfWeek
+aDefault
+mon
+tue
+wed
+thu
+fri
+sat
+sun
+End Enum
+
+'https://hl7.org/fhir/valueset-event-timing.html
+Enum eventTiming
+Default
+HS
+WAKE
+c
+CM
+cd
+CV
+AC
+ACM
+ACD
+ACV
+PC
+PCM
+PCD
+PCV
+MORN
+MORNearly
+MORNlate
+NOON
+AFT
+AFTearly
+AFTlate
+EVE
+EVEearly
+EVElate
+NIGHT
+PHS
+IMD
+End Enum
+
+'https://hl7.org/fhir/valueset-timing-abbreviation.html
+Enum timingAbbreviation
+cDefault
+BID
+TID
+QID
+AM
+PM
+QD
+QOD
+Q1H
+Q2H
+Q3H
+Q4H
+Q6H
+Q8H
+BED
+workaround_wk
+workaround_mo
+'wk and mo have naming conflict with unitoftime
+End Enum
+
+Private Type tboundsPeriod
+    start As Date
+    end As Date
+End Type
+
+Private Type repeat
+    boundsDuration As simpleQuantity
+    boundsRange As tRange
+    eboundsPeriod As tboundsPeriod
+    count As Integer
+    countMax As Integer
+    duration As Double
+    durationMax As Double
+    durationUnit As unitsOfTime
+    frequency As Integer
+    frequencyMax As Integer
+    period As Double
+    periodMax As Double
+    periodUnit As unitsOfTime
+    dayOfWeek(6) As daysOfWeek
+    timeOfDay(9) As Date
+    when(27) As eventTiming
+    offset As Integer 'only one offset but can have a list of "when"
+End Type
+
+Private Type tTiming
+    events(9) As Date
+    repeat As repeat
+    code As coding
+End Type
+
+Private Type tdosage
+    sequence As Integer
+    text As String
+    additionalInstruction(9) As coding
+    patientInstruction As String
+    eTiming As tTiming
+    asNeededBoolean As Boolean
+    asNeededCodeableConcept As coding
+    site As coding
+    route As coding
+    method As coding
+    doseRange As tRange
+    doseQuantity As simpleQuantity
+    maxDosePerPeriod As ratio
+    maxDosePerAdministration As simpleQuantity
+    maxDosePerLifetime As simpleQuantity
+    rateRatio As ratio
+    rateRange As tRange
+    rateQuantity As simpleQuantity
+End Type
+      
+'declare public type
+Dim dosage As tdosage
+Dim blank As tdosage
+
+'<--------------------------- setting helpers -------------------------------------->
+
+Private Sub setAdditionalInstructionAs(arrayPosition As Integer, display As String, Optional code As String)
+'additional instruction array - Include codes from http://snomed.info/sct icon where concept is-a 419492006 (Additional dosage instructions)
+'overlaps with WHEN property. Cf food.
+'overlaps with METHOD property? cf sucked or chewed.
+'overlapmaxdoseperperiod. cf not more than.....
+
+dosage.additionalInstruction(arrayPosition).system = "http://snomed.info/sct"
+dosage.additionalInstruction(arrayPosition).display = display
+dosage.additionalInstruction(arrayPosition).code = code
+End Sub
+Private Sub setAsNeededCodeableConceptAs(display As String, Optional code As String)
+dosage.asNeededCodeableConcept.system = "http://snomed.info/sct"
+dosage.asNeededCodeableConcept.display = display
+dosage.asNeededCodeableConcept.code = code
+End Sub
+Private Sub setDosageTimingRepeatBoundsDurationAs(value As Double, Optional unit As String, Optional code As String)
+dosage.eTiming.repeat.boundsDuration.value = value
+dosage.eTiming.repeat.boundsDuration.unit = unit
+dosage.eTiming.repeat.boundsDuration.code = code
+dosage.eTiming.repeat.boundsDuration.system = "http://unitsofmeasure.org"
+End Sub
+Private Sub setDosageTimingRepeatBoundsRangeLowAs(value As Double, Optional unit As String, Optional code As String)
+dosage.eTiming.repeat.boundsRange.low.system = "http://unitsofmeasure.org"
+dosage.eTiming.repeat.boundsRange.low.value = value
+dosage.eTiming.repeat.boundsRange.low.unit = unit
+dosage.eTiming.repeat.boundsRange.low.code = code
+End Sub
+Private Sub setDosageTimingRepeatBoundsRangeHighAs(value As Double, Optional unit As String, Optional code As String)
+dosage.eTiming.repeat.boundsRange.high.system = "http://unitsofmeasure.org"
+dosage.eTiming.repeat.boundsRange.high.value = value
+dosage.eTiming.repeat.boundsRange.high.unit = unit
+dosage.eTiming.repeat.boundsRange.high.code = code
+End Sub
+Private Sub setDosageTimingRepeatBoundsPeriodAs(pStart As Date, pEnd As Date)
+dosage.eTiming.repeat.eboundsPeriod.start = pStart
+dosage.eTiming.repeat.eboundsPeriod.end = pEnd
+End Sub
+Private Sub setSiteAs(display As String, Optional code As String)
+
+'Include codes from http://snomed.info/sct  where concept is-a 91723000 (Anatomical structure)
+ 
+'has more than 1000 codes. dict might not be best way. get direct from snomed??
+
+'common sites are: ...
+
+dosage.site.system = "http://snomed.info/sct"
+dosage.site.display = display
+dosage.site.code = code
+End Sub
+Private Sub setRouteAs(code As String)
+'Include codes from http://snomed.info/sct  where concept is-a 284009009 (Route of administration values)
+'   Route of administration value (qualifier value)SCTID: 284009009
+
+'private function to set route
+
+Dim dict As Object
+Set dict = CreateObject("Scripting.Dictionary")
+If Not dict.Exists(key) Then
+    dict.Add "6064005", "Topical route"
+    dict.Add "10547007", "Otic route"
+    dict.Add "12130007", "Intra-articular route"
+    dict.Add "16857009", "Per vagina"
+    dict.Add "26643006", "Oral route"
+    dict.Add "34206005", "private subcutaneous route"
+    dict.Add "37161004", "Per rectum"
+    dict.Add "37737002", "Intraluminal route"
+    dict.Add "37839007", "private sublingual route"
+    dict.Add "38239002", "Intraperitoneal route"
+    dict.Add "45890007", "Transdermal route"
+    dict.Add "46713006", "Nasal route"
+    dict.Add "47625008", "Intravenous route"
+    dict.Add "54471007", "Buccal route"
+    dict.Add "54485002", "Ophthalmic route"
+    dict.Add "58100008", "Intra-arterial route"
+    dict.Add "60213007", "Intramedullary route"
+    dict.Add "62226000", "Intrauterine route"
+    dict.Add "72607000", "Intrathecal route"
+    dict.Add "78421000", "Intramuscular route"
+    dict.Add "90028008", "Urethral route"
+    dict.Add "127490009", "Gastrostomy route"
+    dict.Add "127491008", "Jejunostomy route"
+    dict.Add "127492001", "Nasogastric route"
+    dict.Add "372449004", "Dental use"
+    dict.Add "372450004", "Endocervical use"
+    dict.Add "372451000", "Endosinusial use"
+    dict.Add "372452007", "Endotracheopulmonary use"
+    dict.Add "372453002", "Extra-amniotic use"
+    dict.Add "372454008", "Gastroenteral use"
+    dict.Add "372457001", "Gingival use"
+    dict.Add "372458006", "Intraamniotic use"
+    dict.Add "372459003", "Intrabursal use"
+    dict.Add "372460008", "Intracardiac use"
+    dict.Add "372461007", "Intracavernous use"
+    dict.Add "372463005", "Intracoronary use"
+    dict.Add "372464004", "Intradermal use"
+    dict.Add "372465003", "Intradiscal use"
+    dict.Add "372466002", "Intralesional use"
+    dict.Add "372467006", "Intralymphatic use"
+    dict.Add "372468001", "Intraocular use"
+    dict.Add "372469009", "Intrapleural use"
+    dict.Add "372470005", "Intrasternal use"
+    dict.Add "372471009", "Intravesical use"
+    dict.Add "372473007", "Oromucosal use"
+    dict.Add "372474001", "Periarticular use"
+    dict.Add "372475000", "Perineural use"
+    dict.Add "372476004", "private subconjunctival use"
+    dict.Add "404815008", "Transmucosal route"
+    dict.Add "404818005", "Intratracheal route"
+    dict.Add "404819002", "Intrabiliary route"
+    dict.Add "404820008", "Epidural route"
+    dict.Add "416174007", "private suborbital route"
+    dict.Add "417070009", "Caudal route"
+    dict.Add "417255000", "Intraosseous route"
+    dict.Add "417950001", "Intrathoracic route"
+    dict.Add "417985001", "Enteral route"
+    dict.Add "417989007", "Intraductal route"
+    dict.Add "418091004", "Intratympanic route"
+    dict.Add "418114005", "Intravenous central route"
+    dict.Add "418133000", "Intramyometrial route"
+    dict.Add "418136008", "Gastro-intestinal stoma route"
+    dict.Add "418162004", "Colostomy route"
+    dict.Add "418204005", "Periurethral route"
+    dict.Add "418287000", "Intracoronal route"
+    dict.Add "418321004", "Retrobulbar route"
+    dict.Add "418331006", "Intracartilaginous route"
+    dict.Add "418401004", "Intravitreal route"
+    dict.Add "418418000", "Intraspinal route"
+    dict.Add "418441008", "Orogastric route"
+    dict.Add "418511008", "Transurethral route"
+    dict.Add "418586008", "Intratendinous route"
+    dict.Add "418608002", "Intracorneal route"
+    dict.Add "418664002", "Oropharyngeal route"
+    dict.Add "418722009", "Peribulbar route"
+    dict.Add "418730005", "Nasojejunal route"
+    dict.Add "418743005", "Fistula route"
+    dict.Add "418813001", "Surgical drain route"
+    dict.Add "418821007", "Intracameral route"
+    dict.Add "418851001", "Paracervical route"
+    dict.Add "418877009", "Intrasynovial route"
+    dict.Add "418887008", "Intraduodenal route"
+    dict.Add "418892005", "Intracisternal route"
+    dict.Add "418947002", "Intratesticular route"
+    dict.Add "418987007", "Intracranial route"
+    dict.Add "419021003", "Tumor cavity route"
+    dict.Add "419165009", "Paravertebral route"
+    dict.Add "419231003", "Intrasinal route"
+    dict.Add "419243002", "Transcervical route"
+    dict.Add "419320008", "private subtendinous route"
+    dict.Add "419396008", "Intraabdominal route"
+    dict.Add "419601003", "private subgingival route"
+    dict.Add "419631009", "Intraovarian route"
+    dict.Add "419684008", "Ureteral route"
+    dict.Add "419762003", "Peritendinous route"
+    dict.Add "419778001", "Intrabronchial route"
+    dict.Add "419810008", "Intraprostatic route"
+    dict.Add "419874009", "private submucosal route"
+    dict.Add "419894000", "Surgical cavity route"
+    dict.Add "419954003", "Ileostomy route"
+    dict.Add "419993007", "Intravenous peripheral route"
+    dict.Add "420047004", "Periosteal route"
+    dict.Add "420163009", "Esophagostomy route"
+    dict.Add "420168000", "Urostomy route"
+    dict.Add "420185003", "Laryngeal route"
+    dict.Add "420201002", "Intrapulmonary route"
+    dict.Add "420204005", "Mucous fistula route"
+    dict.Add "420218003", "Nasoduodenal route"
+    dict.Add "420254004", "Body cavity route"
+    dict.Add "420287000", "Intraventricular route - cardiac"
+    dict.Add "420719007", "Intracerebroventricular route"
+    dict.Add "428191002", "Percutaneous route"
+    dict.Add "429817007", "Interstitial route"
+    dict.Add "445752009", "Intraesophageal route"
+    dict.Add "445754005", "Intragingival route"
+    dict.Add "445755006", "Intravascular route"
+    dict.Add "445756007", "Intradural route"
+    dict.Add "445767008", "Intrameningeal route"
+    dict.Add "445768003", "Intragastric route"
+    dict.Add "445769006", "Intracorpus cavernosum route"
+    dict.Add "445771006", "Intrapericardial route"
+    dict.Add "445913005", "Intralingual route"
+    dict.Add "445941009", "Intrahepatic route"
+    dict.Add "446105004", "Conjunctival route"
+    dict.Add "446407004", "Intraepicardial route"
+    dict.Add "446435000", "Transendocardial route"
+    dict.Add "446442000", "Transplacental route"
+    dict.Add "446540005", "Intracerebral route"
+    dict.Add "447026006", "Intraileal route"
+    dict.Add "447052000", "Periodontal route"
+    dict.Add "447080003", "Peridural route"
+    dict.Add "447081004", "Lower respiratory tract route"
+    dict.Add "447121004", "Intramammary route"
+    dict.Add "447122006", "Intratumor route"
+    dict.Add "447227007", "Transtympanic route"
+    dict.Add "447229005", "Transtracheal route"
+    dict.Add "447694001", "Respiratory tract route"
+    dict.Add "447964005", "Digestive tract route"
+    dict.Add "448077001", "Intraepidermal route"
+    dict.Add "448491004", "Intrajejunal route"
+    dict.Add "448492006", "Intracolonic route"
+    dict.Add "448598008", "Cutaneous route"
+    dict.Add "697971008", "Arteriovenous fistula route"
+    dict.Add "711360002", "Intraneural route"
+    dict.Add "711378007", "Intramural route"
+    dict.Add "714743009", "Extracorporeal route"
+    dict.Add "718329006", "Infiltration route"
+    dict.Add "1611000175109", "private sublesional route"
+
+End If
+
+
+dosage.route.system = "http://snomed.info/sct"
+dosage.route.display = dict.Item(code)
+dosage.route.code = code
+
+'Debug.Print "dict item debug: " & dict.Item("34206005")
+
+End Sub
+Private Sub setMethodAs(display As String, Optional code As String)
+'private function to set method
+
+dosage.method.system = "http://snomed.info/sct"
+dosage.method.display = display
+dosage.method.code = code
+End Sub
+Private Sub setDoseRangeLowAs(value As Double, Optional unit As String, Optional code As String, Optional system As String)
+'set dose range.
+dosage.doseRange.low.value = value
+dosage.doseRange.low.unit = unit 'e.g. milligram OR Tablet
+dosage.doseRange.low.code = code 'e.g. mg OR Tab
+dosage.doseRange.low.system = system '"http://unitsofmeasure.org" 'OR "http://snomed.info/sct"
+'Debug.Print "drLv ", dosage.doseRange.low.value, dosage.doseRange.low.unit, dosage.doseRange.low.code, dosage.doseRange.low.system
+End Sub
+Private Sub setDoseRangeHighAs(value As Double, Optional unit As String, Optional code As String, Optional system As String)
+dosage.doseRange.high.value = value
+dosage.doseRange.high.unit = unit
+dosage.doseRange.high.code = code
+dosage.doseRange.high.system = system '"http://unitsofmeasure.org"
+End Sub
+Private Sub setDoseQuantityAs(value As Double, Optional unit As String, Optional code As String, Optional system As String)
+'parent is 408102007 | Unit dose (qualifier value) | <--- could use as generic unit if none specified?
+'could possibly test medication resource - medication.form(codeableconcept) which includes:
+'Include codes from http://snomed.info/sct  where concept is-a 421967003 (Drug dose form)
+
+dosage.doseQuantity.code = code
+dosage.doseQuantity.value = value
+dosage.doseQuantity.unit = unit
+dosage.doseQuantity.system = system '"http://snomed.info/sct"
+End Sub
+Private Sub setMaxDosePerPeriodNumeratorAs(value As Double, Optional comparator As String, Optional unit As String, Optional code As String, Optional system As String)
+dosage.maxDosePerPeriod.numerator.value = value
+dosage.maxDosePerPeriod.numerator.comparator = comparator
+dosage.maxDosePerPeriod.numerator.unit = unit
+dosage.maxDosePerPeriod.numerator.code = code
+dosage.maxDosePerPeriod.numerator.system = system '"http://snomed.info/sct"
+End Sub
+Private Sub setMaxDosePerPeriodDenominatorAs(value As Double, Optional unit As String, Optional code As String, Optional system As String)
+dosage.maxDosePerPeriod.denominator.value = value
+dosage.maxDosePerPeriod.denominator.unit = unit
+dosage.maxDosePerPeriod.denominator.code = code
+dosage.maxDosePerPeriod.denominator.system = system '"http://unitsofmeasure.org"
+End Sub
+Private Sub setMaxDosePerAdministrationAs(value As Double, Optional unit As String, Optional code As String, Optional system As String)
+'max dose per administration
+'dosage.maxDosePerAdministration.system = "http://snomed.info/sct" | '"http://unitsofmeasure.org"
+dosage.maxDosePerAdministration.system = system
+dosage.maxDosePerAdministration.value = value
+dosage.maxDosePerAdministration.unit = unit
+dosage.maxDosePerAdministration.code = code
+End Sub
+Private Sub setMaxDosePerLifetimeAs(value As Double, Optional unit As String, Optional code As String, Optional system As String)
+'max dose per lifetime - ditto
+dosage.masDosePerLifetime.system = system '"http://snomed.info/sct"
+dosage.masDosePerLifetime.value = value
+dosage.masDosePerLifetime.unit = unit
+dosage.masDosePerLifetime.code = code
+End Sub
+Private Sub setRateRatioNumeratorAs(value As Double, Optional comparator As String, Optional unit As String, Optional code As String)
+dosage.rateRatio.numerator.value = value
+dosage.rateRatio.numerator.comparator = comparator
+dosage.rateRatio.numerator.unit = unit
+dosage.rateRatio.numerator.system = "http://unitsofmeasure.org"
+dosage.rateRatio.numerator.code = code
+End Sub
+Private Sub setRateRatioDenominatorAs(value As Double, Optional unit As String, Optional code As String)
+dosage.rateRatio.denominator.value = value
+dosage.rateRatio.denominator.unit = unit
+dosage.rateRatio.denominator.system = "http://unitsofmeasure.org"
+dosage.rateRatio.denominator.code = code
+End Sub
+Private Sub setRateRangeLowAs(value As Double, Optional unit As String, Optional code As String)
+'- might change tabs or mg
+dosage.rateRange.low.value = value
+dosage.rateRange.low.unit = unit
+dosage.rateRange.low.code = code
+dosage.rateRange.low.system = "http://unitsofmeasure.org"
+End Sub
+Private Sub setRateRangeHighAs(value As Double, Optional unit As String, Optional code As String)
+'- might change tabs or mg
+dosage.rateRange.high.value = value
+dosage.rateRange.high.unit = unit
+dosage.rateRange.high.code = code
+dosage.rateRange.high.system = "http://unitsofmeasure.org"
+End Sub
+Private Sub setRateQuantityAs(value As Double, Optional unit As String, Optional code As String)
+'- might change tabs or mg
+dosage.rateQuantity.value = value
+dosage.rateQuantity.unit = unit
+dosage.rateQuantity.code = code
+dosage.rateQuantity.system = "http://unitsofmeasure.org"
+End Sub
+
+Private Sub setTimingCodeAs(code As timingAbbreviation)
+'dosage.eTiming.code.code = code
+dosage.eTiming.code.system = "http://hl7.org/fhir/ValueSet/timing-abbreviation"
+
+Select Case True
+    Case code = cDefault
+        dosage.eTiming.code.display = ""
+        dosage.eTiming.code.code = ""
+    Case code = BID
+        dosage.eTiming.code.display = "BID"
+        dosage.eTiming.code.code = "BID"
+    Case code = TID
+        dosage.eTiming.code.display = "TID"
+        dosage.eTiming.code.code = "TID"
+    Case code = QID
+        dosage.eTiming.code.display = "QID"
+        dosage.eTiming.code.code = "QID"
+    Case code = AM
+        dosage.eTiming.code.display = "AM"
+        dosage.eTiming.code.code = "AM"
+    Case code = PM
+        dosage.eTiming.code.display = "PM"
+        dosage.eTiming.code.code = "PM"
+    Case code = QD
+        dosage.eTiming.code.display = "QD"
+        dosage.eTiming.code.code = "QD"
+    Case code = QOD
+        dosage.eTiming.code.display = "QOD"
+        dosage.eTiming.code.code = "QOD"
+    Case code = Q1H
+        dosage.eTiming.code.display = "every hour"
+        dosage.eTiming.code.code = "Q1H"
+    Case code = Q2H
+        dosage.eTiming.code.display = "every 2 hours"
+        dosage.eTiming.code.code = "Q2H"
+    Case code = Q3H
+        dosage.eTiming.code.display = "every 3 hours"
+        dosage.eTiming.code.code = "Q3H"
+    Case code = Q4H
+        dosage.eTiming.code.display = "Q4H"
+        dosage.eTiming.code.code = "Q4H"
+    Case code = Q6H
+        dosage.eTiming.code.display = "Q6H"
+        dosage.eTiming.code.code = "Q6H"
+    Case code = Q8H
+        dosage.eTiming.code.display = "every 8 hours"
+        dosage.eTiming.code.code = "Q8H"
+    Case code = BED
+        dosage.eTiming.code.display = "at bedtime"
+        dosage.eTiming.code.code = "BED"
+    Case code = workaround_wk
+        dosage.eTiming.code.display = "weekly"
+        dosage.eTiming.code.code = "WK"
+    Case code = workaround_mo
+        dosage.eTiming.code.display = "monthly"
+        dosage.eTiming.code.code = "MO"
+
+End Select
+
+End Sub
+
+'<--------------------------- JSON helpers -------------------------------------->
+'todo
+'private function output FIHR dosage as xml
+
+Private Function JSONDosage() As String
+'dosage.patientInstruction = "barfoo"
+
+JSONDosage = "{""resourceType"":""Dosage"", " & _
+    JSONSequence & _
+    JSONText & _
+    JSONadditionalInstruction & _
+    JSONPatientInstruction & _
+    JSONTiming & _
+    JSONasNeededBoolean & _
+    JSONAsNeededCodeableConcept & _
+    JSONSite & _
+    JSONRoute & _
+    JSONMethod & _
+    JSONDoseRange & _
+    JSONDoseQuantity & _
+    JSONMaxDosePerPeriod & _
+    JSONMaxDosePerAdministration & _
+    JSONMaxDosePerLifetime & _
+    JSONRateRatio & _
+    JSONRateRange & _
+    JSONRateQuantity & _
+    "}"
+JSONDosage = Replace(JSONDosage, ", }", "}")
+'Debug.Print JSONDosage
+End Function
+
+Private Function JSONSequence() As String
+    If dosage.sequence > 0 Then
+        JSONSequence = """sequence"": " & dosage.sequence & ", "
+    Else
+        JSONSequence = ""
+    End If
+End Function
+Private Function JSONText() As String
+    'dosage.text = "barfoo"
+    If Not dosage.text = "" Then
+        JSONText = """text"": """ & dosage.text & """, "
+        'XMLText = "<text value =""" &dosage.text & """/>"
+    Else
+        JSONText = ""
+    End If
+End Function
+
+Private Function JSONadditionalInstruction() As String
+Dim listOfSlots As String
+
+'Call setAdditionalInstructionAs(0, "foobar", "1234")
+
+'Debug.Print dosage.additionalInstruction(0).code
+'Debug.Print dosage.additionalInstruction(0).display
+'Debug.Print dosage.additionalInstruction(0).system
+'Debug.Print UBound(dosage.additionalInstruction)
+
+For slot = 0 To UBound(dosage.additionalInstruction)
+    If Len(dosage.additionalInstruction(slot).code) > 0 Then
+        listOfSlots = "{""system"": """ & dosage.additionalInstruction(slot).system & """, ""code"":""" & _
+        dosage.additionalInstruction(slot).code & """, ""display"":""" & _
+        dosage.additionalInstruction(slot).display & """}" & ", " & listOfSlots
+    End If
+Next slot
+
+'JSONadditionalInstruction = Join(dosage.additionalInstruction, ",") 'join wont work on a private type, but cant use public type in a class module.
+JSONadditionalInstruction = Replace(listOfSlots, ", ", "")
+JSONadditionalInstruction = """additionalInstruction"":[" & JSONadditionalInstruction & "], "
+'Debug.Print JSONadditionalInstruction
+
+If JSONadditionalInstruction = """additionalInstruction"":[], " Then
+    JSONadditionalInstruction = ""
+End If
+
+End Function
+
+Private Function JSONPatientInstruction() As String
+    If Not dosage.patientInstruction = "" Then
+        JSONPatientInstruction = """patientInstruction"": """ & dosage.patientInstruction & """, "
+    Else
+        JSONPatientInstruction = ""
+    End If
+End Function
+
+
+Private Function JSONTiming1() As String
+Dim timingString As String
+
+If Not JSONEvent = "" Then
+    timingString = JSONEvent
+End If
+'Debug.Print "1 " & timingString
+
+If Not JSONRepeat = "" And Not timingString = "" Then
+    timingString = timingString & ", " & JSONRepeat
+Else
+    timingString = JSONRepeat
+End If
+'Debug.Print "2 " & timingString
+
+If Not JSONCode = "" And Not timingString = "" Then
+    timingString = timingString & ", " & JSONCode
+Else
+    timingString = timingString & JSONCode
+End If
+'Debug.Print "3 " & timingString
+
+JSONTiming = """timing"":{" & timingString & "}, "
+End Function
+
+Private Function JSONTiming() As String
+JSONTiming = """timing"":{" & JSONEvent & ", " & JSONRepeat & ", " & JSONCode & "}, "
+JSONTiming = Replace(JSONTiming, "{,", "{")
+JSONTiming = Replace(JSONTiming, "{ ,", "{")
+JSONTiming = Replace(JSONTiming, ", }", "}")
+
+If Len(JSONTiming) < 15 Then
+    'Debug.Print "blank detected"
+    JSONTiming = ""
+End If
+End Function
+
+Private Function JSONEvent() As String
+'dosage.eTiming.events(0) = TimeValue("16:00:00")
+'Debug.Print dosage.eTiming.events(0)
+'Debug.Print Format(dosage.eTiming.events(1), "General Date")
+
+Dim listOfSlots As String
+
+For slot = UBound(dosage.eTiming.events) To 0 Step -1
+    If dosage.eTiming.events(slot) > DateValue("01/01/1800") Then 'workaround default date is set with parse private function
+        listOfSlots = """" & Format(dosage.eTiming.events(slot), "General Date") & """, " & listOfSlots
+    End If
+Next slot
+
+listOfSlots = Replace(listOfSlots, ", ", "")
+    If listOfSlots = "" Then
+        JSONEvent = ""
+    Else
+        JSONEvent = """event"": [" & listOfSlots & "]"
+    End If
+'Debug.Print JSONEvent
+End Function
+Private Function JSONRepeat() As String
+
+'need to apply the following rules.
+'When the event is to occur
+'+ If there's an offset, there must be a when (and not C, CM, CD, CV)
+'+ period SHALL be a non-negative value
+'+ If there's a periodMax, there must be a period
+'+ If there's a durationMax, there must be a duration
+'+ If there's a countMax, there must be a count
+'+ if there's a duration, there needs to be duration units
+'+ If there's a timeOfDay, there cannot be be a when, or vice versa
+'+ if there's a period, there needs to be period units
+'+ duration SHALL be a non-negative value
+
+JSONRepeat = JSONBoundsDuration & _
+    JSONBoundsRange & _
+    JSONBoundsPeriod & _
+    JSONCount & _
+    JSONCountMax & _
+    JSONDuration & _
+    JSONDurationMax & _
+    JSONDurationUnit & _
+    JSONFrequency & _
+    JSONFrequencyMax & _
+    JSONPeriod & _
+    JSONPeriodMax & _
+    JSONPeriodUnit & _
+    JSONDayOfWeek & _
+    JSONTimeOfDay & _
+    JSONWhen & _
+    JSONOffset
+
+If JSONRepeat = "" Then
+    JSONRepeat = ""
+Else
+JSONRepeat = """repeat"": {" & JSONRepeat & "}"
+JSONRepeat = Replace(JSONRepeat, ", }", "}")
+End If
+'Debug.Print JSONRepeat
+End Function
+Private Function JSONBoundsDuration() As String
+'dosage.eTiming.repeat.boundsDuration.value = 10
+
+'test to blank because 1 of 3 boundsDuration, boundsRange, boundsPeriod
+    If dosage.eTiming.repeat.boundsRange.low.value > 0 Or dosage.eTiming.repeat.eboundsPeriod.start > DateValue("01/01/1800") Or dosage.eTiming.repeat.boundsDuration.value = 0 Then
+        JSONBoundsDuration = ""
+    Else
+        JSONBoundsDuration = """boundsDuration"": {""value"": """ & dosage.eTiming.repeat.boundsDuration.value & """, ""unit"": """ & dosage.eTiming.repeat.boundsDuration.unit & """, ""system"": """ & dosage.eTiming.repeat.boundsDuration.system & """, ""code"": """ & dosage.eTiming.repeat.boundsDuration.code & """}, "
+    End If
+
+'Debug.Print JSONBoundsDuration
+End Function
+Private Function JSONBoundsRange() As String
+'dosage.eTiming.repeat.boundsRange.low.value = 10
+
+'test to blank because 1 of 3 boundsDuration, boundsRange, boundsPeriod
+    If dosage.eTiming.repeat.eboundsPeriod.start > DateValue("01/01/1800") Or dosage.eTiming.repeat.boundsDuration.value > 0 Or dosage.eTiming.repeat.boundsRange.high.value = 0 Then
+        JSONBoundsRange = ""
+    Else
+        JSONBoundsRange = """boundsRange"": {""Low"": {""value"": """ & dosage.eTiming.repeat.boundsRange.low.value & """, ""unit"": """ & dosage.eTiming.repeat.boundsRange.low.unit & """, ""system"": """ & dosage.eTiming.repeat.boundsRange.low.system & """, ""code"": """ & dosage.eTiming.repeat.boundsRange.low.code & """}, ""high"": {""value"": """ & dosage.eTiming.repeat.boundsRange.high.value & """, ""unit"": """ & dosage.eTiming.repeat.boundsRange.high.unit & """, ""system"": """ & dosage.eTiming.repeat.boundsRange.high.system & """, ""code"": """ & dosage.eTiming.repeat.boundsRange.high.code & """}}, "
+    End If
+'Debug.Print JSONBoundsRange
+End Function
+Private Function JSONBoundsPeriod() As String
+Dim boundsPeriodStart As String
+Dim boundsPeriodEnd As String
+
+    If dosage.eTiming.repeat.boundsRange.high.value > 0 Or dosage.eTiming.repeat.boundsDuration.value > 0 Or dosage.eTiming.repeat.eboundsPeriod.end = DateValue("01/01/1800") Then
+        JSONBoundsPeriod = ""
+    Else
+        If dosage.eTiming.repeat.eboundsPeriod.start > DateValue("01/01/1800") Then
+            boundsPeriodStart = dosage.eTiming.repeat.eboundsPeriod.start
+        Else
+            boundsPeriodStart = ""
+        End If
+        
+        If dosage.eTiming.repeat.eboundsPeriod.end > DateValue("01/01/1800") Then
+            boundsPeriodEnd = dosage.eTiming.repeat.eboundsPeriod.end
+        Else
+            boundsPeriodEnd = ""
+        End If
+    
+        JSONBoundsPeriod = """boundsPeriod"": {""start"": """ & boundsPeriodStart & """, ""end"": """ & boundsPeriodEnd & """}, "
+    End If
+'Debug.Print JSONBoundsPeriod
+End Function
+
+Private Function JSONCount() As String
+    If dosage.eTiming.repeat.count > 0 Then
+        JSONCount = """count"": """ & dosage.eTiming.repeat.count & """, "
+    Else
+        JSONCount = ""
+    End If
+End Function
+Private Function JSONCountMax() As String
+    If dosage.eTiming.repeat.countMax > 0 Then
+        JSONCountMax = """countMax"": """ & dosage.eTiming.repeat.countMax & """, "
+    Else
+        JSONCountMax = ""
+    End If
+End Function
+
+Private Function JSONDuration() As String
+    If dosage.eTiming.repeat.duration > 0 Then
+        JSONDuration = """duration"": """ & dosage.eTiming.repeat.duration & """, "
+    Else
+        JSONDuration = ""
+    End If
+End Function
+
+Private Function JSONDurationMax() As String
+    If dosage.eTiming.repeat.durationMax > 0 Then
+        JSONDurationMax = """durationMax"": """ & dosage.eTiming.repeat.durationMax & """, "
+    Else
+        JSONDurationMax = ""
+    End If
+End Function
+
+Private Function JSONDurationUnit() As String
+Dim strDurationUnit As String
+
+Select Case True
+    Case dosage.eTiming.repeat.durationUnit = bDefault
+        strDurationUnit = ""
+    Case dosage.eTiming.repeat.durationUnit = s
+        strDurationUnit = "s"
+    Case dosage.eTiming.repeat.durationUnit = Min
+        strDurationUnit = "Min"
+    Case dosage.eTiming.repeat.durationUnit = h
+        strDurationUnit = "h"
+    Case dosage.eTiming.repeat.durationUnit = d
+        strDurationUnit = "d"
+    Case dosage.eTiming.repeat.durationUnit = wk
+        strDurationUnit = "wk"
+    Case dosage.eTiming.repeat.durationUnit = mo
+        strDurationUnit = "mo"
+    Case dosage.eTiming.repeat.durationUnit = a
+        strDurationUnit = "a"
+End Select
+
+If strDurationUnit = "" Then
+    JSONDurationUnit = ""
+Else
+    JSONDurationUnit = """durationUnit"": """ & strDurationUnit & """, "
+End If
+End Function
+
+Private Function JSONFrequency() As String
+    If dosage.eTiming.repeat.frequency > 0 Then
+        JSONFrequency = """frequency"": """ & dosage.eTiming.repeat.frequency & """, "
+    Else
+        JSONFrequency = ""
+    End If
+End Function
+Private Function JSONFrequencyMax() As String
+    If dosage.eTiming.repeat.frequencyMax > 0 Then
+        JSONFrequencyMax = """frequencyMax"": """ & dosage.eTiming.repeat.frequencyMax & """, "
+    Else
+        JSONFrequencyMax = ""
+    End If
+End Function
+Private Function JSONPeriod() As String
+    If dosage.eTiming.repeat.period > 0 Then
+        JSONPeriod = """period"": """ & dosage.eTiming.repeat.period & """, "
+    Else
+        JSONPeriod = ""
+    End If
+End Function
+Private Function JSONPeriodMax() As String
+    If dosage.eTiming.repeat.periodMax > 0 Then
+    JSONPeriodMax = """periodMax"": """ & dosage.eTiming.repeat.periodMax & """, "
+    Else
+    JSONPeriodMax = ""
+    End If
+End Function
+Private Function JSONPeriodUnit() As String
+Dim strPeriodUnit As String
+
+Select Case True
+    Case dosage.eTiming.repeat.periodUnit = bDefault
+        strPeriodUnit = ""
+    Case dosage.eTiming.repeat.periodUnit = s
+        strPeriodUnit = "s"
+    Case dosage.eTiming.repeat.periodUnit = Min
+        strPeriodUnit = "Min"
+    Case dosage.eTiming.repeat.periodUnit = h
+        strPeriodUnit = "h"
+    Case dosage.eTiming.repeat.periodUnit = d
+        strPeriodUnit = "d"
+    Case dosage.eTiming.repeat.periodUnit = wk
+        strPeriodUnit = "wk"
+    Case dosage.eTiming.repeat.periodUnit = mo
+        strPeriodUnit = "mo"
+    Case dosage.eTiming.repeat.periodUnit = a
+        strPeriodUnit = "a"
+End Select
+
+If strPeriodUnit = "" Then
+    JSONPeriodUnit = ""
+Else
+    JSONPeriodUnit = """periodUnit"": """ & strPeriodUnit & """, "
+End If
+End Function
+
+Private Function JSONDayOfWeek() As String
+Dim listOfSlots As String
+
+For slot = UBound(dosage.eTiming.repeat.dayOfWeek) To 0 Step -1
+    'Debug.Print UBound(dosage.eTiming.repeat.dayOfWeek)
+    Select Case True
+        Case dosage.eTiming.repeat.dayOfWeek(slot) = aDefault
+            listOfSlots = listOfSlots
+        Case dosage.eTiming.repeat.dayOfWeek(slot) = mon
+            listOfSlots = """mon"", " & listOfSlots
+        Case dosage.eTiming.repeat.dayOfWeek(slot) = tue
+            listOfSlots = """tue"", " & listOfSlots
+        Case dosage.eTiming.repeat.dayOfWeek(slot) = wed
+            listOfSlots = """wed"", " & listOfSlots
+        Case dosage.eTiming.repeat.dayOfWeek(slot) = thu
+            listOfSlots = """thu"", " & listOfSlots
+        Case dosage.eTiming.repeat.dayOfWeek(slot) = fri
+            listOfSlots = """fri"", " & listOfSlots
+        Case dosage.eTiming.repeat.dayOfWeek(slot) = sat
+            listOfSlots = """sat"", " & listOfSlots
+        Case dosage.eTiming.repeat.dayOfWeek(slot) = sun
+            listOfSlots = """sun"", " & listOfSlots
+       
+    End Select
+     
+Next slot
+
+JSONDayOfWeek = """dayOfWeek"": [" & listOfSlots & "], "
+JSONDayOfWeek = Replace(JSONDayOfWeek, ", ],", "],")
+
+If listOfSlots = "" Then
+JSONDayOfWeek = ""
+End If
+
+'Debug.Print JSONDayOfWeek
+End Function
+Private Function JSONTimeOfDay() As String
+'todo *** implement rule: "The elements when, frequency and period cannot be used as well as timeOfDay."
+'todo *** discern PM timeofday from PM code.
+
+Dim listOfSlots As String
+
+For slot = UBound(dosage.eTiming.repeat.timeOfDay) To 0 Step -1
+    If dosage.eTiming.repeat.timeOfDay(slot) > DateValue("01/01/1800") Then 'workaround default date is set with parse private function
+        listOfSlots = dosage.eTiming.repeat.timeOfDay(slot) & ", " & listOfSlots
+    End If
+Next slot
+
+'listOfSlots = Replace(listOfSlots, ", ", "")
+JSONTimeOfDay = """timeOfDay"": [" & listOfSlots & "], "
+JSONTimeOfDay = Replace(JSONTimeOfDay, ", ],", "],")
+
+If listOfSlots = "" Then
+JSONTimeOfDay = ""
+End If
+
+'Debug.Print JSONTimeOfDay
+End Function
+Private Function JSONWhen() As String
+Dim listOfSlots As String
+'dosage.eTiming.repeat.when(0) = HS
+'dosage.eTiming.repeat.when(1) = PCV
+'Dim whenDisplay As String
+'Debug.Print UBound(dosage.eTiming.repeat.when)
+
+For slot = UBound(dosage.eTiming.repeat.when) To 0 Step -1
+
+    Select Case True
+        Case dosage.eTiming.repeat.when(slot) = Default
+            listOfSlots = listOfSlots
+        Case dosage.eTiming.repeat.when(slot) = HS
+            listOfSlots = """HS"", " & listOfSlots
+        Case dosage.eTiming.repeat.when(slot) = WAKE
+            listOfSlots = """WAKE"", " & listOfSlots
+        Case dosage.eTiming.repeat.when(slot) = c
+            listOfSlots = """c"", " & listOfSlots
+        Case dosage.eTiming.repeat.when(slot) = CM
+            listOfSlots = """CM"", " & listOfSlots
+        Case dosage.eTiming.repeat.when(slot) = cd
+            listOfSlots = """CD"", " & listOfSlots
+        Case dosage.eTiming.repeat.when(slot) = CV
+            listOfSlots = """CV"", " & listOfSlots
+        Case dosage.eTiming.repeat.when(slot) = AC
+            listOfSlots = """AC"", " & listOfSlots
+        Case dosage.eTiming.repeat.when(slot) = ACM
+            listOfSlots = """ACM"", " & listOfSlots
+        Case dosage.eTiming.repeat.when(slot) = ACD
+            listOfSlots = """ACD"", " & listOfSlots
+        Case dosage.eTiming.repeat.when(slot) = ACV
+            listOfSlots = """ACV"", " & listOfSlots
+        Case dosage.eTiming.repeat.when(slot) = PC
+            listOfSlots = """PC"", " & listOfSlots
+        Case dosage.eTiming.repeat.when(slot) = PCM
+            listOfSlots = """PCM"", " & listOfSlots
+        Case dosage.eTiming.repeat.when(slot) = PCD
+            listOfSlots = """PCD"", " & listOfSlots
+        Case dosage.eTiming.repeat.when(slot) = PCV
+            listOfSlots = """PCV"", " & listOfSlots
+        Case dosage.eTiming.repeat.when(slot) = MORN
+            listOfSlots = """MORN"", " & listOfSlots
+        Case dosage.eTiming.repeat.when(slot) = MORNearly
+            listOfSlots = """MORNearly"", " & listOfSlots
+        Case dosage.eTiming.repeat.when(slot) = MORNlate
+            listOfSlots = """MORNlate"", " & listOfSlots
+        Case dosage.eTiming.repeat.when(slot) = NOON
+            listOfSlots = """NOON"", " & listOfSlots
+        Case dosage.eTiming.repeat.when(slot) = AFT
+            listOfSlots = """AFT"", " & listOfSlots
+        Case dosage.eTiming.repeat.when(slot) = AFTearly
+            listOfSlots = """AFTearly"", " & listOfSlots
+        Case dosage.eTiming.repeat.when(slot) = AFTlate
+            listOfSlots = """AFTlate"", " & listOfSlots
+        Case dosage.eTiming.repeat.when(slot) = EVE
+            listOfSlots = """EVE"", " & listOfSlots
+        Case dosage.eTiming.repeat.when(slot) = EVEearly
+            listOfSlots = """EVEearly"", " & listOfSlots
+        Case dosage.eTiming.repeat.when(slot) = EVElate
+            listOfSlots = """EVElate"", " & listOfSlots
+        Case dosage.eTiming.repeat.when(slot) = NIGHT
+            listOfSlots = """NIGHT"", " & listOfSlots
+        Case dosage.eTiming.repeat.when(slot) = PHS
+            listOfSlots = """PHS"", " & listOfSlots
+        Case dosage.eTiming.repeat.when(slot) = IMD
+            listOfSlots = """IMD"", " & listOfSlots
+    End Select
+     
+Next slot
+
+JSONWhen = """when"": [" & listOfSlots & "], "
+JSONWhen = Replace(JSONWhen, ", ]", "]")
+'Debug.Print JSONWhen
+
+If listOfSlots = "" Then
+JSONWhen = ""
+End If
+
+
+End Function
+
+
+Private Function JSONOffset() As String
+    If dosage.eTiming.repeat.offset = 0 Then
+    JSONOffset = ""
+    Else
+    JSONOffset = """offset"": """ & dosage.eTiming.repeat.offset & """"
+    End If
+    
+End Function
+
+Private Function JSONCode() As String
+'setTimingCodeAs (BED)
+    If dosage.eTiming.code.display = "" Then
+        JSONCode = ""
+    Else
+        JSONCode = """code"": {""system"":""" & dosage.eTiming.code.system & _
+            """, ""code"":""" & dosage.eTiming.code.code & _
+            """, ""display"":""" & dosage.eTiming.code.display & """}"
+    End If
+'Debug.Print "jsoncode is " & JSONCode
+End Function
+
+
+Private Function JSONasNeededBoolean() As String
+'test to blank because 1of2 asNeededBoolean or asNeededCodeableConcept
+If Len(dosage.asNeededCodeableConcept.display) > 0 Then
+    JSONasNeededBoolean = ""
+Else
+    JSONasNeededBoolean = """asNeededBoolean"": """ & dosage.asNeededBoolean & """, "
+End If
+'Debug.Print JSONasNeededBoolean
+End Function
+
+Private Function JSONAsNeededCodeableConcept() As String
+'test to blank because 1of2 asNeededBoolean or asNeededCodeableConcept
+    If dosage.asNeededBoolean = True Or dosage.asNeededCodeableConcept.display = "" Then
+        JSONAsNeededCodeableConcept = ""
+    Else
+        JSONAsNeededCodeableConcept = """asNeededCodeableConcept"": {""system"": """ & _
+            dosage.asNeededCodeableConcept.system & _
+            """, ""code"": """ & dosage.asNeededCodeableConcept.code & _
+            """, ""display"": """ & dosage.asNeededCodeableConcept.display & """}, "
+    End If
+End Function
+
+Private Function JSONSite() As String
+'dosage.site.display = "oral"
+    If dosage.site.code = "" Then
+        JSONSite = ""
+    Else
+        JSONSite = """site"":{" & """system"": """ & dosage.site.system & _
+            """, ""code"": """ & dosage.site.code & _
+            """, ""display"": """ & dosage.site.display & """}, "
+    End If
+'Debug.Print JSONSite
+
+
+End Function
+
+Private Function JSONRoute() As String
+
+    If dosage.route.code = "" Then
+        JSONRoute = ""
+    Else
+        JSONRoute = """route"":{" & """system"": """ & dosage.route.system & _
+            """, ""code"": """ & dosage.route.code & _
+            """, ""display"": """ & dosage.route.display & """}, "
+    End If
+'Debug.Print JSONRoute
+
+End Function
+
+Private Function JSONMethod() As String
+
+    If dosage.method.code = "" Then
+        JSONMethod = ""
+    Else
+        JSONMethod = """method"":{" & """system"": """ & dosage.method.system & _
+            """, ""code"": """ & dosage.method.code & _
+            """, ""display"": """ & dosage.method.display & """}, "
+    End If
+
+'Debug.Print JSONMethod
+End Function
+
+Private Function JSONDoseRange() As String
+'"doseRange": { "Low": { "value": "<decimal>", "unit": "<string>", "system": "http://unitsofmeasure.org", "code": "<code>" }, "high": { "value": "<decimal>", "unit": "<string>", "system": "http://unitsofmeasure.org", "code": "<code>" } }
+
+'test to blank because 1 of 2 doseRange or doseQuantity
+    If dosage.doseQuantity.value > 0 Or dosage.doseRange.high.value = 0 Then
+        JSONDoseRange = ""
+    Else
+        JSONDoseRange = """doseRange"":{""low"":{""value"": """ & dosage.doseRange.low.value & _
+            """, ""unit"": """ & dosage.doseRange.low.unit & _
+            """, ""system"": """ & dosage.doseRange.low.system & _
+            """, ""code"": """ & dosage.doseRange.low.code & _
+            """}, " & _
+            """high"":{""value"": """ & dosage.doseRange.high.value & _
+            """, ""unit"": """ & dosage.doseRange.high.unit & _
+            """, ""system"": """ & dosage.doseRange.high.system & _
+            """, ""code"": """ & dosage.doseRange.high.code & _
+            """}}, "
+    End If
+    'Debug.Print JSONDoseRange
+End Function
+
+Private Function JSONDoseQuantity() As String
+'"doseQuantity": { "value": "<num>", "unit": "<str>", "system": "http://snomed.info/sct", "code": "<code>" }
+    If dosage.doseRange.high.value > 0 Or dosage.doseQuantity.value = 0 Then
+        JSONDoseQuantity = ""
+    Else
+        JSONDoseQuantity = """doseQuantity"":{""value"": """ & dosage.doseQuantity.value & _
+            """, ""unit"": """ & dosage.doseQuantity.unit & _
+            """, ""system"": """ & dosage.doseQuantity.system & _
+            """, ""code"": """ & dosage.doseQuantity.code & _
+            """}, "
+    End If
+    'Debug.Print JSONDoseQuantity
+End Function
+
+Private Function JSONMaxDosePerPeriod() As String
+'"maxDosePerPeriod": { "numerator": { "value": "<num>", "unit": "<str>", "system": "http://snomed.info/sct", "code": "<code>" }, "denominator": { "value": "<decimal>", "unit": "<string>", "system": "http://unitsofmeasure.org", "code": "<code>" } }
+    If dosage.maxDosePerPeriod.numerator.value = 0 Then
+        JSONMaxDosePerPeriod = ""
+    Else
+        JSONMaxDosePerPeriod = """maxDosePerPeriod"":{""numerator"":{""value"": """ & dosage.maxDosePerPeriod.numerator.value & _
+            """, ""unit"": """ & dosage.maxDosePerPeriod.numerator.unit & _
+            """, ""system"": """ & dosage.maxDosePerPeriod.numerator.system & _
+            """, ""code"": """ & dosage.maxDosePerPeriod.numerator.code & _
+            """}, " & _
+            """denominator"":{""value"": """ & dosage.maxDosePerPeriod.denominator.value & _
+            """, ""unit"": """ & dosage.maxDosePerPeriod.denominator.unit & _
+            """, ""system"": """ & dosage.maxDosePerPeriod.denominator.system & _
+            """, ""code"": """ & dosage.maxDosePerPeriod.denominator.code & _
+            """}}, "
+    End If
+
+End Function
+
+Private Function JSONMaxDosePerAdministration() As String
+'"maxDosePerAdministration": { "value": "<num>", "unit": "<str>", "system": "http://snomed.info/sct", "code": "<code>" }
+    If dosage.maxDosePerAdministration.value = 0 Then
+        JSONMaxDosePerAdministration = ""
+    Else
+        JSONMaxDosePerAdministration = """maxDosePerAdministration"":{""value"": """ & dosage.maxDosePerAdministration.value & _
+            """, ""unit"": """ & dosage.maxDosePerAdministration.unit & _
+            """, ""system"": """ & dosage.maxDosePerAdministration.system & _
+            """, ""code"": """ & dosage.maxDosePerAdministration.code & _
+            """}, "
+    End If
+End Function
+Private Function JSONMaxDosePerLifetime() As String
+'"maxDosePerLifetime": { "value": "<num>", "unit": "<str>", "system": "http://snomed.info/sct", "code": "<code>" }
+    If dosage.maxDosePerLifetime.value = 0 Then
+        JSONMaxDosePerLifetime = ""
+    Else
+        JSONMaxDosePerLifetime = """maxDosePerLifetime"":{""value"": """ & dosage.maxDosePerLifetime.value & _
+            """, ""unit"": """ & dosage.maxDosePerLifetime.unit & _
+            """, ""system"": """ & dosage.maxDosePerLifetime.system & _
+            """, ""code"": """ & dosage.maxDosePerLifetime.code & _
+            """}, "
+    End If
+End Function
+
+Private Function JSONRateRatio() As String
+'"rateRatio": { "numerator": { "value": "<num>", "unit": "<str>", "system": "http://snomed.info/sct", "code": "<code>" }, "denominator": { "value": "<decimal>", "unit": "<string>", "system": "http://unitsofmeasure.org", "code": "<code>" } }
+
+'test to blank because 1of3 rateRatio, rateRange, or rateQuantity
+    If dosage.rateRange.low.value > 0 Or dosage.rateQuantity.value > 0 Or dosage.rateRatio.numerator.value = 0 Then
+        JSONRateRatio = ""
+    Else
+        JSONRateRatio = """rateRatio"":{""numerator"":{""value"": """ & dosage.rateRatio.numerator.value & _
+            """, ""unit"": """ & dosage.rateRatio.numerator.unit & _
+            """, ""system"": """ & dosage.rateRatio.numerator.system & _
+            """, ""code"": """ & dosage.rateRatio.numerator.code & _
+            """}, " & _
+            """denominator"":{""value"": """ & dosage.rateRatio.denominator.value & _
+            """, ""unit"": """ & dosage.rateRatio.denominator.unit & _
+            """, ""system"": """ & dosage.rateRatio.denominator.system & _
+            """, ""code"": """ & dosage.rateRatio.denominator.code & _
+            """}}"
+    End If
+End Function
+
+Private Function JSONRateRange() As String
+'"rateRange": { "Low": { "value": "<decimal>", "unit": "<string>", "system": "http://unitsofmeasure.org", "code": "<code>" }, "high": { "value": "<decimal>", "unit": "<string>", "system": "http://unitsofmeasure.org", "code": "<code>" } }
+
+'test to blank because 1of3 rateRatio, rateRange, or rateQuantity
+    If dosage.rateRatio.numerator.value > 0 Or dosage.rateQuantity.value > 0 Or dosage.rateRange.low.value = 0 Then
+        JSONRateRange = ""
+    Else
+        JSONRateRange = """rateRange"":{""low"":{""value"": """ & dosage.rateRange.low.value & _
+            """, ""unit"": """ & dosage.rateRange.low.unit & _
+            """, ""system"": """ & dosage.rateRange.low.system & _
+            """, ""code"": """ & dosage.rateRange.low.code & _
+            """}, " & _
+            """high"":{""value"": """ & dosage.rateRange.high.value & _
+            """, ""unit"": """ & dosage.rateRange.high.unit & _
+            """, ""system"": """ & dosage.rateRange.high.system & _
+            """, ""code"": """ & dosage.rateRange.high.code & _
+            """}}"
+    End If
+End Function
+
+Private Function JSONRateQuantity() As String
+'"rateQuantity": { "value": "<num>", "unit": "<str>", "system": "http://snomed.info/sct", "code": "<code>" }
+
+'test to blank because 1of3 rateRatio, rateRange, or rateQuantity
+    If dosage.rateRatio.numerator.value > 0 Or dosage.rateRange.low.value > 0 Or dosage.rateQuantity.value = 0 Then
+        JSONRateQuantity = ""
+    Else
+        JSONRateQuantity = """rateQuantity"":{""value"": """ & dosage.rateQuantity.value & _
+            """, ""unit"": """ & dosage.rateQuantity.unit & _
+            """, ""system"": """ & dosage.rateQuantity.system & _
+            """, ""code"": """ & dosage.rateQuantity.code & _
+            """}"
+    End If
+End Function
+
+'<--------------------------- parser functions -------------------------------------->
+
+Public Function FIHR3JSONConvertedFrom(doseString As String) As String
+    FIHR3JSONConvertedFrom = createArrayFromSequentialDose(doseString)
+End Function
+
+Private Function createArrayFromSequentialDose(doseString As String)
+Dim doseSequenceArray() As String
+Dim outputstring As String
+Dim noDetectedIutputJson As String
+
+'clean up dose string
+doseString = Trim(UCase(doseString))                                            'make everything uppercase and trim whitespace
+doseString = regexReplace(doseString, "[\.]{2,10}", " ")                        'remove dots and replace with a space
+doseString = regexReplace(doseString, "-", " - ")                               'standardise treatment of dashes "1- 2 -3" becomes "1 - 2 - 3"
+doseString = regexReplace(doseString, "\.(?=\d\.\d)", "")                       'remove confusing decimal points
+doseString = regexReplace(doseString, "(\s\d\s)X\s|(\s\d)X\s", "$1$2 TIMES ")   'change erratic use of X for TIMES [regex lookbehind not supported]
+doseString = regexReplace(doseString, "(?:^|[^\d])\sX\s?\d", "$1 FOR ")         'change erratic use of X for FOR [regex lookbehind not supported]
+doseString = regexReplace(doseString, "\b(\w+)\b(?:[\s\p{P}]*\1\b)+", "$1")     'remove consecutive repeated words
+doseString = Replace(doseString, "UPTO", "UP TO")                               'correct spelling of "up to"
+doseString = Replace(doseString, "(TYP=A)", "")                                 'remove legacy software indicators
+doseString = Replace(doseString, "(TYP=R)", "")
+doseString = Replace(doseString, "1TO 2", "1 TO 2")                             'remove inconsistent spaces
+doseString = Replace(doseString, "1 TO2", "1 TO 2")
+doseString = Replace(doseString, "1OR 2", "1 OR 2")
+doseString = Replace(doseString, "1 OR2", "1 OR 2")
+doseString = regexReplace(doseString, "\s{2,20}", " ")                          'remove multiple spaces and replace with one space
+                                                                                '#x#?
+                                                                                'MLS to ML?
+'Debug.Print "dosestring is " & doseString
+
+If doseString Like "*AND THEN*" And Not doseString Like "*AND THEN SWALLOW*" Then
+'    Debug.Print "and then triggered"
+    doseSequenceArray = Split(doseString, " AND THEN ")
+ElseIf doseString Like "*THEN*" And Not doseString Like "*AND THEN SWALLOW*" Then
+'    Debug.Print "and or triggered"
+    doseSequenceArray = Split(doseString, " THEN ")
+ElseIf doseString Like "*AND/OR*" Then
+'    Debug.Print "and or triggered"
+    doseSequenceArray = Split(doseString, " AND/OR ")
+ElseIf doseString Like "*FOLLOWED BY*" Then
+    'Debug.Print "FOLLOWED BY triggered"
+    doseSequenceArray = Split(doseString, " FOLLOWED BY ")
+ElseIf doseString Like "*PLUS*" Then
+    doseSequenceArray = Split(doseString, " PLUS ")
+ElseIf doseString Like "*ON TOP OF MAINTENANCE DOSE,*" Then
+    doseSequenceArray = Split(doseString, "ON TOP OF MAINTENANCE DOSE,")
+ElseIf doseString Like "* AND ONE*" Then
+    ReDim doseSequenceArray(1)
+    doseSequenceArray(0) = Left(doseString, InStr(doseString, "AND ONE") - 1)
+    doseSequenceArray(1) = Mid(doseString, InStr(doseString, "AND ONE") + 4, Len(doseString) - InStr(doseString, "AND ONE") + 1)
+ElseIf doseString Like "* AND TWO*" Then
+    ReDim doseSequenceArray(1)
+    doseSequenceArray(0) = Left(doseString, InStr(doseString, "AND TWO") - 1)
+    doseSequenceArray(1) = Mid(doseString, InStr(doseString, "AND TWO") + 4, Len(doseString) - InStr(doseString, "AND TWO") + 1)
+ElseIf doseString Like "* AND THREE*" Then 'and 3??
+    ReDim doseSequenceArray(1)
+    doseSequenceArray(0) = Left(doseString, InStr(doseString, "AND THREE") - 1)
+    doseSequenceArray(1) = Mid(doseString, InStr(doseString, "AND THREE") + 4, Len(doseString) - InStr(doseString, "AND THREE") + 1)
+ElseIf doseString Like "* AND FOUR*" Then
+    ReDim doseSequenceArray(1)
+    doseSequenceArray(0) = Left(doseString, InStr(doseString, "AND FOUR") - 1)
+    doseSequenceArray(1) = Mid(doseString, InStr(doseString, "AND FOUR") + 4, Len(doseString) - InStr(doseString, "AND FOUR") + 1)
+ElseIf doseString Like "* AND AN*" Then
+    ReDim doseSequenceArray(1)
+    doseSequenceArray(0) = Left(doseString, InStr(doseString, "AND AN") - 1)
+    doseSequenceArray(1) = Mid(doseString, InStr(doseString, "AND AN") + 4, Len(doseString) - InStr(doseString, "AND AN") + 1)
+Else
+    doseSequenceArray = Split(doseString, "unfeasible delimiter workaround")
+End If
+
+'Debug.Print doseSequenceArray(0)
+
+For i = 0 To UBound(doseSequenceArray)
+'    Debug.Print doseSequenceArray(i)
+    If UBound(doseSequenceArray) > 0 Then
+    dosage.sequence = i + 1
+    End If
+      
+    Call parseString(doseSequenceArray(i))
+    outputstring = outputstring & JSONDosage
+    dosage = blank      'problem with scope - otherwise properties remain set through each loop. https://stackoverflow.com/questions/9788330/set-a-type-in-vba-to-nothing
+Next i
+
+createArrayFromSequentialDose = Replace(outputstring, "}{", "}, {")
+
+nodetectedoutputjson = "{""resourceType"":""Dosage"", ""asNeededBoolean"": ""False""}"
+
+If createArrayFromSequentialDose = nodetectedoutputjson Then
+    createArrayFromSequentialDose = "{""resourceType"":""Dosage"", ""patientInstruction"": """ & doseString & """, ""asNeededBoolean"": ""False""}"
+End If
+
+createArrayFromSequentialDose = "{""dosageInstruction"": [" & createArrayFromSequentialDose & "]}"
+
+End Function
+
+Private Sub parseString(doseString As String, Optional productDescription As String)
+
+'workaround for default dates initialise with a value.
+For i = 0 To UBound(dosage.eTiming.events)
+    dosage.eTiming.events(i) = DateValue("01/01/1800")
+Next i
+
+For j = 0 To UBound(dosage.eTiming.repeat.timeOfDay)
+    dosage.eTiming.repeat.timeOfDay(j) = DateValue("01/01/1800")
+Next j
+
+dosage.eTiming.repeat.eboundsPeriod.start = DateValue("01/01/1800")
+dosage.eTiming.repeat.eboundsPeriod.end = DateValue("01/01/1800")
+
+'assign string to text property
+dosage.text = doseString
+
+'call subs
+
+
+Call parseStringByDoseUnit(doseString)
+Call parseStringByDoseMeasurement(doseString)
+Call parseStringByDividedDay(doseString)
+Call parseStringByTiming(doseString)
+Call parseStringByFIHRLatinWhen(doseString)
+Call parseStringByFIHRLatinCode(doseString)
+Call parseStringCommonLatin(doseString)
+Call parseStringByDayOfWeek(doseString)
+Call parseStringForPRN(doseString)
+Call parseStringForRoute(doseString)
+Call parseStringForMethod(doseString)
+Call parseStringForMaximum(doseString)
+Call parseStringForDuration(doseString)
+Call parseStringForReason(doseString)
+Call parseStringForTimeOfDay(doseString)
+End Sub
+Private Sub parseStringForMaximum(doseString As String)
+'Max,maximum, no more than, up to, do not take more than, not more than
+'***increase to?
+'numerator per denominator - fits the type
+'frequency only - need to derive numerator
+'need to test for unit.
+
+Dim partialString As String
+Dim arrPartialString() As String
+Dim maxDoseCode As String
+Dim maxDoseUnit As String
+Dim maxDoseSystem As String
+Dim maxDoseValue As String
+
+'if e.g. migraleve more than one MAX dose send to textual patient instructions
+
+'Debug.Print "unit Compare: dose quant ", dosage.doseQuantity.unit, Len(dosage.doseQuantity.unit), "doserange ", dosage.doseRange.high.unit, Len(dosage.doseRange.high.unit)
+
+If Len(dosage.doseQuantity.unit) = 0 And Len(dosage.doseRange.high.unit) = 0 Then
+    maxDoseCode = ""
+    maxDoseUnit = ""
+    maxDoseSystem = ""
+    maxDoseValue = ""
+    'Debug.Print "1st cond"
+ElseIf Len(dosage.doseQuantity.unit) = 0 And Len(dosage.doseRange.high.unit) > 0 Then
+    maxDoseCode = dosage.doseRange.high.code
+    maxDoseUnit = dosage.doseRange.high.unit
+    maxDoseSystem = dosage.doseRange.high.system
+    maxDoseValue = dosage.doseRange.high.value
+    'Debug.Print "2nd cond"
+ElseIf Len(dosage.doseQuantity.unit) > 0 And Len(dosage.doseRange.high.unit) = 0 Then
+    maxDoseCode = dosage.doseQuantity.code
+    maxDoseUnit = dosage.doseQuantity.unit
+    maxDoseSystem = dosage.doseQuantity.system
+    maxDoseValue = dosage.doseQuantity.value
+End If
+
+'Debug.Print "params", maxDoseValue, maxDoseCode, maxDoseUnit, maxDoseSystem
+    
+    Select Case True
+    
+    Case doseString Like "*MAX*"
+        partialString = Mid(doseString, InStr(doseString, "MAX"), 1 + Len(doseString) - InStr(doseString, "MAX") + 4)
+            If InStr(partialString, ".") > 0 Then
+                arrPartialString = Split(partialString, ".")
+                partialString = arrPartialString(0)
+            ElseIf InStr(partialString, ")") > 0 Then
+                arrPartialString = Split(partialString, ")")
+                partialString = arrPartialString(0)
+            ElseIf InStr(partialString, ",") > 0 Then
+                arrPartialString = Split(partialString, ",")
+                partialString = arrPartialString(0)
+            End If
+    Case doseString Like "*NO* MORE*THAN*"
+        partialString = Mid(doseString, InStr(doseString, "THAN"), 1 + Len(doseString) - InStr(doseString, "THAN") + 5)
+            If InStr(partialString, ".") > 0 Then
+                arrPartialString = Split(partialString, ".")
+                partialString = arrPartialString(0)
+            ElseIf InStr(partialString, ")") > 0 Then
+                arrPartialString = Split(partialString, ")")
+                partialString = arrPartialString(0)
+            ElseIf InStr(partialString, ",") > 0 Then
+                arrPartialString = Split(partialString, ",")
+                partialString = arrPartialString(0)
+            End If
+    Case doseString Like "*UP TO*" '*** this way cant have an "up to" and "max" in sames dosestring: max is detected first.
+        partialString = Mid(doseString, InStr(doseString, "UP"), 1 + Len(doseString) - InStr(doseString, "UP") + 5)
+                'Debug.Print partialString
+            If InStr(partialString, ".") > 0 Then
+                arrPartialString = Split(partialString, ".")
+                partialString = arrPartialString(0)
+            ElseIf InStr(partialString, ")") > 0 Then
+                arrPartialString = Split(partialString, ")")
+                partialString = arrPartialString(0)
+            ElseIf InStr(partialString, ",") > 0 Then
+                arrPartialString = Split(partialString, ",")
+                partialString = arrPartialString(0)
+            End If
+    Case doseString Like "*INCREASING TO*" 'increased to?
+        partialString = Mid(doseString, InStr(doseString, "NG TO"), 1 + Len(doseString) - InStr(doseString, "NG TO") + 5)
+                'Debug.Print partialString
+            If InStr(partialString, ".") > 0 Then
+                arrPartialString = Split(partialString, ".")
+                partialString = arrPartialString(0)
+            ElseIf InStr(partialString, ")") > 0 Then
+                arrPartialString = Split(partialString, ")")
+                partialString = arrPartialString(0)
+            ElseIf InStr(partialString, ",") > 0 Then
+                arrPartialString = Split(partialString, ",")
+                partialString = arrPartialString(0)
+            End If
+    End Select
+    'Debug.Print partialString
+    
+    Select Case True
+        Case partialString Like "*DOSE*" And Not partialString Like maxDoseUnit
+        maxDoseUnit = "dose"
+        maxDoseCode = "3317411000001100"
+    End Select
+    
+ '**************Need new private functions to parse the "Maximum" partial string? or do all in one func?****************
+    Select Case True
+        Case partialString Like "*AND*" And Not partialString Like "*AND VOM*"   'blunt way of dealing with more complicated maximums.
+            dosage.patientInstruction = partialString
+        Case partialString Like "MAXIMUM DAILY DOSE"
+            'pass
+        Case partialString Like "*#*A DAY*" And Not partialString Like "*TIMES*", _
+            partialString Like "*#*/DAY*" And Not partialString Like "*TIMES*", _
+            partialString Like "*#*PER DAY*" And Not partialString Like "*TIMES*", _
+            partialString Like "*#*DAILY*" And Not partialString Like "*TIMES*"
+                partialString = RegexExtract(partialString, "\d+", ",") 'what about "1 or 2"?
+                setMaxDosePerPeriodNumeratorAs CDbl(partialString), , maxDoseUnit, maxDoseCode, maxDoseSystem
+                setMaxDosePerPeriodDenominatorAs 1, "day", "d", "http://unitsofmeasure.org/"
+        Case partialString Like "*ONCE A DAY*", partialString Like "*ONCE DAILY*"
+        'to do
+        Case partialString Like "*TWICE A DAY*", partialString Like "*TWICE DAILY*" ' problem: 1ON max BD - freq 2, freqmax2
+            dosage.eTiming.repeat.frequency = 0 'appropriate?
+            dosage.eTiming.repeat.frequencyMax = 2
+            dosage.eTiming.repeat.period = 1
+            dosage.eTiming.repeat.periodUnit = d
+        Case partialString Like "*#* 24[ H][HOR][ROLUS ]*"
+            partialString = RegexExtract(Replace(partialString, "24", ""), "\d+", ",")
+            setMaxDosePerPeriodNumeratorAs CDbl(partialString), , maxDoseUnit, maxDoseCode, maxDoseSystem
+            setMaxDosePerPeriodDenominatorAs 24, "hour", "h", "http://unitsofmeasure.org/"
+        Case partialString Like "*#*HOUR*"
+            partialString = RegexExtract(partialString, "\d+", ",")
+            'Debug.Print partialString
+            setMaxDosePerPeriodNumeratorAs CDbl(maxDoseValue), , maxDoseUnit, maxDoseCode, maxDoseSystem
+            setMaxDosePerPeriodDenominatorAs CDbl(partialString), "hour", "h", "http://unitsofmeasure.org/"
+        Case partialString Like "*TIMES*DA*" And Not partialString Like "* OR *"
+            Select Case True
+                Case partialString Like "*THREE TIMES*", partialString Like "*3 TIMES*"
+                    'Debug.Print "up to three times"
+                    dosage.eTiming.repeat.frequency = 0 'appropriate?
+                    dosage.eTiming.repeat.frequencyMax = 3
+                    dosage.eTiming.repeat.period = 1
+                    dosage.eTiming.repeat.periodUnit = d
+                Case partialString Like "*FOUR TIMES*" And Not doseString Like "*HOURS*", partialString Like "*4 TIMES*" 'missed take one up to 4x  times/day
+                    'Debug.Print "up to four times"
+                    dosage.eTiming.repeat.frequency = 0 'appropriate?
+                    dosage.eTiming.repeat.frequencyMax = 4
+                    dosage.eTiming.repeat.period = 1
+                    dosage.eTiming.repeat.periodUnit = d
+            End Select
+        Case partialString Like "*QDS*"
+            dosage.eTiming.repeat.frequencyMax = 4
+            dosage.eTiming.repeat.period = 1
+            dosage.eTiming.repeat.periodUnit = d
+        Case partialString Like "*TDS*"
+            dosage.eTiming.repeat.frequencyMax = 3
+            dosage.eTiming.repeat.period = 1
+            dosage.eTiming.repeat.periodUnit = d
+        Case partialString Like "*BD*"
+            dosage.eTiming.repeat.frequencyMax = 2
+            dosage.eTiming.repeat.period = 1
+            dosage.eTiming.repeat.periodUnit = d
+        Case partialString Like "*# DAYS*"
+            setDosageTimingRepeatBoundsRangeLowAs 0, "d", "day"
+            setDosageTimingRepeatBoundsRangeHighAs RegexExtract(partialString, "\d*"), "d", "day"
+        ' per week, per month etc.
+            'THREE TIMES A WEEK
+            '2 NIGHTS PER WEEK
+        
+    End Select
+    
+    
+End Sub
+Private Sub parseStringByDoseMeasurement(doseString As String)
+Dim doseRangeSpecified As Boolean
+Dim doseByMeasurement As String
+Dim arrDoseByMeasurement() As String
+Dim doseByMeasurementStrippedUnits As String
+Dim totalStated As String
+
+totalStated = RegexExtract(doseString, "\(.*TOTAL.*\)") 'total stated in brackets
+'Debug.Print "total stated ", totalStated
+
+Select Case True
+    Case totalStated Like "*MG*"
+        setDoseQuantityAs CDbl(RegexExtract(totalStated, "\d*")), "milligram", "mg", "http://unitsofmeasure.org"
+
+    Case totalStated Like "*MCG*", totalStated Like "*MICROGRAM*"
+        setDoseQuantityAs CDbl(RegexExtract(totalStated, "\d*")), "microgram", "ug", "http://unitsofmeasure.org"
+End Select
+
+doseString = Replace(doseString, totalStated, "")
+
+
+'Debug.Print doseString, totalStated
+
+'*** TO DO: Handle grams ***
+
+'****there is an argument to remove all doses of mg in brackets for this subroutine:**** to test
+
+'removes doses in mg in brackets
+'doseString = regexReplace(doseString, "\(?\d+\.?\d*\s?MG?\s?-?\s?[TO]?[OR]?\s?\d*\.?\d*\s?MG\)?", "")
+'removes brackets around remaing doses in mL
+'doseString = regexReplace(doseString, "\((?=\d+\.?\d*\s?ML?\s?-?\s?[TO]?[OR]?\s?\d*\.?\d*\s?ML)", "")
+'doseString = Replace(doseString, "MLS", "ML")
+'doseString = Replace(doseString, "ML)", "ML")
+'doseString = Replace(doseString, "  ", " ")
+
+
+'remove dose given in mg in brackets if dose also already given as mL.
+If doseString Like "*MG*" And doseString Like "*ML*" Then
+    'removes doses in mg in brackets
+    doseString = regexReplace(doseString, "\(?\d+\.?\d*\s?M?G?\s?-?\s?[TO]?[OR]?\s?\d*\.?\d*\s?MG\)?", "")
+    'removes brackets around remaing doses in mL
+    doseString = regexReplace(doseString, "\((?=\d+\.?\d*\s?M?[GL]?\s?-?\s?[TO]?[OR]?\s?\d*\.?\d*\s?ML)", "")
+    doseString = Replace(doseString, "MLS", "ML")
+    doseString = Replace(doseString, "ML)", "ML")
+    doseString = Replace(doseString, "  ", " ")
+End If
+
+doseByMeasurement = RegexExtract(doseString, "\d+\.?\d*\s?M?[GL]?\s?-?\s?[TO]?[OR]?\s?\d*\.?\d*\s?M[GL]", ", ")
+doseByMeasurement = Replace(doseByMeasurement, " ", "")
+
+'Debug.Print doseString
+'Debug.Print doseByMeasurement
+
+If InStr(doseByMeasurement, ",") > 0 Then
+    arrDoseByMeasurement = Split(doseByMeasurement, ",")
+    doseByMeasurement = arrDoseByMeasurement(0)
+    'Debug.Print doseByMeasurement
+End If
+'dosage by weight or volume - to do, ****think about how maps to dose "rates" *****
+    Select Case True
+        Case doseByMeasurement Like "*#MG*"
+            doseByMeasurementStrippedUnits = regexReplace(doseByMeasurement, "MG", "")
+            'Debug.Print "doseByMeasurement mg " & doseByMeasurementStrippedUnits
+            Select Case True
+                Case doseString Like "* OVER*24*H*" And Not doseByMeasurementStrippedUnits Like "*-*"
+                    setRateRatioNumeratorAs CDbl(doseByMeasurementStrippedUnits), "milligram", "mg", "http://unitsofmeasure.org"
+                    setRateRatioDenominatorAs 24, "hour", "h"
+                Case doseString Like "* OVER*24*H*" And doseByMeasurementStrippedUnits Like "*-*"
+                    setRateRangeLowAs CDbl(Left(doseByMeasurementStrippedUnits, InStr(doseByMeasurementStrippedUnits, "-") - 1)), "milligram per day", "mg/d"
+                    setRateRangeHighAs CDbl(Right(doseByMeasurementStrippedUnits, (Len(doseByMeasurementStrippedUnits) - InStr(doseByMeasurementStrippedUnits, "-")))), "milligram per day", "mg/d"
+                Case doseByMeasurementStrippedUnits Like "*-*"
+                    setDoseRangeLowAs CDbl(Left(doseByMeasurementStrippedUnits, InStr(doseByMeasurementStrippedUnits, "-") - 1)), "milligram", "mg", "http://unitsofmeasure.org"
+                    setDoseRangeHighAs CDbl(Right(doseByMeasurementStrippedUnits, (Len(doseByMeasurementStrippedUnits) - InStr(doseByMeasurementStrippedUnits, "-")))), "milligram", "mg", "http://unitsofmeasure.org"
+                Case doseByMeasurementStrippedUnits Like "*OR*"
+                    setDoseRangeLowAs CDbl(Left(doseByMeasurementStrippedUnits, InStr(doseByMeasurementStrippedUnits, "OR") - 1)), "milligram", "mg", "http://unitsofmeasure.org"
+                    setDoseRangeHighAs CDbl(Right(doseByMeasurementStrippedUnits, (Len(doseByMeasurementStrippedUnits) - InStr(doseByMeasurementStrippedUnits, "OR")) - 1)), "milligram", "mg", "http://unitsofmeasure.org"
+                Case doseByMeasurementStrippedUnits Like "*TO*"
+                    setDoseRangeLowAs CDbl(Left(doseByMeasurementStrippedUnits, InStr(doseByMeasurementStrippedUnits, "TO") - 1)), "milligram", "mg", "http://unitsofmeasure.org"
+                    setDoseRangeHighAs CDbl(Right(doseByMeasurementStrippedUnits, (Len(doseByMeasurementStrippedUnits) - InStr(doseByMeasurementStrippedUnits, "TO")) - 1)), "milligram", "mg", "http://unitsofmeasure.org"
+                Case Else
+                    setDoseQuantityAs CDbl(doseByMeasurementStrippedUnits), "milligram", "mg", "http://unitsofmeasure.org"
+                End Select
+                
+        Case doseByMeasurement Like "*#ML*" And Not doseString Like "*[X ]5ML SPOON*"
+            doseByMeasurementStrippedUnits = regexReplace(doseByMeasurement, "ML", "")
+           ' Debug.Print "doseByMeasurement mL " & doseByMeasurementStrippedUnits
+            Select Case True
+                Case doseByMeasurementStrippedUnits Like "*-*"
+                    setDoseRangeLowAs CDbl(Left(doseByMeasurementStrippedUnits, InStr(doseByMeasurementStrippedUnits, "-") - 1)), "millilitre", "mL", "http://unitsofmeasure.org"
+                    setDoseRangeHighAs CDbl(Right(doseByMeasurementStrippedUnits, (Len(doseByMeasurementStrippedUnits) - InStr(doseByMeasurementStrippedUnits, "-")))), "millilitre", "mL", "http://unitsofmeasure.org"
+                Case doseByMeasurementStrippedUnits Like "*OR*"
+                    setDoseRangeLowAs CDbl(Left(doseByMeasurementStrippedUnits, InStr(doseByMeasurementStrippedUnits, "OR") - 1)), "millilitre", "mL", "http://unitsofmeasure.org"
+                    setDoseRangeHighAs CDbl(Right(doseByMeasurementStrippedUnits, (Len(doseByMeasurementStrippedUnits) - InStr(doseByMeasurementStrippedUnits, "OR")) - 1)), "millilitre", "mL", "http://unitsofmeasure.org"
+                Case doseByMeasurementStrippedUnits Like "*TO*"
+                    setDoseRangeLowAs CDbl(Left(doseByMeasurementStrippedUnits, InStr(doseByMeasurementStrippedUnits, "TO") - 1)), "millilitre", "mL", "http://unitsofmeasure.org"
+                    setDoseRangeHighAs CDbl(Right(doseByMeasurementStrippedUnits, (Len(doseByMeasurementStrippedUnits) - InStr(doseByMeasurementStrippedUnits, "TO")) - 1)), "millilitre", "mL", "http://unitsofmeasure.org"
+                Case Else
+                    setDoseQuantityAs CDbl(doseByMeasurementStrippedUnits), "millilitre", "mL", "http://unitsofmeasure.org"
+                End Select
+                'Debug.Print "doseByMeasurement ml " & doseByMeasurementStrippedUnits, dosage.doseQuantity.value, dosage.doseRange.low.value
+                
+            'Debug.Print doseByMeasurement
+        End Select
+End Sub
+
+
+Private Sub parseStringByDoseUnit(doseString As String)
+'dosage by dose units
+Dim doseRangeSpecified As Boolean
+
+Dim code As String
+Dim unit As String
+Dim system As String
+
+Dim dict1 As Object
+Set dict1 = CreateObject("Scripting.dictionary")
+If Not dict1.Exists(key) Then
+    dict1.Add "514941000000109", "5 millilitre medicine spoonful"
+    dict1.Add "655831000001108", "Actuation"
+    dict1.Add "413516001", "Ampule"
+    dict1.Add "413568008", "Application"
+    dict1.Add "1641000175108", "Applicator"
+    dict1.Add "1651000175105", "Applicatorful"
+    dict1.Add "428672001", "Bag"
+    dict1.Add "428003006", "Bar"
+    dict1.Add "418836005", "Base"
+    dict1.Add "425565005", "Blister"
+    dict1.Add "419672006", "Bottle"
+    dict1.Add "418445004", "Box"
+    'dict1.Add "429308001", "Can"
+    dict1.Add "428641000", "Capsule"
+    dict1.Add "901121000001105", "Cartridge"
+    dict1.Add "413769002", "Case"
+    dict1.Add "428178003", "Cup"
+    dict1.Add "427678004", "Disc"
+    dict1.Add "700478009", "Dressing"
+    dict1.Add "404218003", "Drop"
+    dict1.Add "421954001", "Dropperful"
+    dict1.Add "700476008", "Enema"
+    dict1.Add "421496007", "Glassful"
+    dict1.Add "430281005", "Gum"
+    dict1.Add "428177008", "Implant"
+    dict1.Add "422237004", "Inhalation"
+    dict1.Add "428639001", "Insert"
+    dict1.Add "419179001", "Kit"
+    dict1.Add "429587008", "Lozenge"
+    dict1.Add "1681000175101", "Package"
+    dict1.Add "419888008", "Packet"
+    dict1.Add "421823004", "Pad"
+    dict1.Add "700473000", "Pastille"
+    dict1.Add "419702001", "Patch"
+    dict1.Add "428640004", "Pellet"
+    dict1.Add "911361000001100", "Pessary"
+    dict1.Add "911371000001105", "Pillule"
+    dict1.Add "655791000001103", "Plaster"
+    dict1.Add "700474006", "Prefilled syringe"
+    dict1.Add "415215001", "Puff"
+    dict1.Add "2741000175105", "Pump"
+    dict1.Add "426148002", "Sachet"
+    dict1.Add "415505006", "Scoop"
+    dict1.Add "429671000", "Sponge"
+    dict1.Add "419694003", "Spray"
+    dict1.Add "1661000175107", "Squirt"
+    dict1.Add "1691000175103", "Stick"
+    dict1.Add "1671000175104", "Strip"
+    dict1.Add "430293001", "Suppository"
+    dict1.Add "420401004", "Swab"
+    dict1.Add "415702006", "Tablespoonful"
+    dict1.Add "428673006", "Tablet"
+    dict1.Add "700477004", "Tampon"
+    dict1.Add "415703001", "Teaspoonful"
+    dict1.Add "418530008", "Tube"
+    dict1.Add "415818006", "Vial"
+    dict1.Add "1701000175103", "Wafer"
+    dict1.Add "10692211000001100", "application"
+    dict1.Add "3316811000001100", "baguette"
+    dict1.Add "8091811000001100", "bandage"
+    dict1.Add "3317011000001100", "carton"
+    dict1.Add "3319911000001100", "catheter"
+    dict1.Add "10692611000001100", "cigarette"
+    dict1.Add "10368211000001100", "component"
+    'dict1.Add "3318711000001100", "device"
+    'dict1.Add "3317411000001100", "dose"
+    dict1.Add "10697011000001100", "dose step"
+    dict1.Add "3320111000001100", "dressing"
+    dict1.Add "10696111000001100", "elastomeric device"
+    dict1.Add "8091011000001100", "generator"
+    dict1.Add "3321511000001100", "glove"
+    dict1.Add "3317611000001100", "lancet"
+    dict1.Add "3317711000001100", "loaf"
+    dict1.Add "3317911000001100", "multipack"
+    dict1.Add "3318011000001100", "nebule"
+    dict1.Add "3318111000001100", "needle"
+    'dict1.Add "3318211000001100", "pack"
+    dict1.Add "3318311000001100", "pastille"
+    dict1.Add "3321411000001100", "piece"
+    dict1.Add "3321311000001100", "pizza base"
+    dict1.Add "3321111000001100", "pot"
+    'dict1.Add "3318611000001100", "pre"
+    dict1.Add "3318811000001100", "roll"
+    dict1.Add "10696911000001100", "scoop"
+    dict1.Add "3319011000001100", "stocking"
+    dict1.Add "3320311000001100", "suture"
+    dict1.Add "3320411000001100", "truss"
+End If
+
+Dim varKey As Variant
+Dim arrItems As Variant
+Dim arrKeys As Variant
+'Debug.Print dict1.count
+'Debug.Print dict1.Item("3320411000001100")
+
+arrItems = dict1.Items
+arrKeys = dict1.Keys
+
+For varKey = 0 To UBound(arrItems)
+    If doseString Like "*" & UCase(arrItems(varKey)) & "*" Then
+       'Debug.Print "SDU found ", UCase(arrItems(varKey)), arrKeys(varKey)
+        unit = arrItems(varKey)
+        code = arrKeys(varKey)
+        system = "http://snomed.info/sct"
+    End If
+Next
+
+
+'handle doses expressed as 5mL spoonfuls / cap / tab
+If doseString Like "*5ML SPOON*" And Not doseString Like "*2.5ML SPOON*" Then
+    unit = "5 millilitre medicine spoonful"
+    code = "514941000000109"
+    system = "http://snomed.info/sct"
+ElseIf doseString Like "*CAP*" And Not doseString Like "*CAPLET*" Then
+    unit = "Capsule"
+    code = "428641000"
+    system = "http://snomed.info/sct"
+ElseIf doseString Like "*TAB*" Then
+    unit = "Tablet"
+    code = "428673006"
+    system = "http://snomed.info/sct"
+
+End If
+
+
+'placeholder code until extract dose form from product description.
+If unit = "" Then
+    unit = "Unit dose"
+    code = "408102007"
+    system = "http://snomed.info/sct"
+    'Debug.Print "unit dose assigned."
+End If
+
+Select Case True
+       
+    '~take half - one
+    Case doseString Like "*HALF - ONE*"
+        doseRangeSpecified = True
+        setDoseRangeLowAs 0.5, unit, code, system
+        setDoseRangeHighAs 1, unit, code, system
+        
+    '~take 1 or 2
+    Case doseString Like "*ONE [TO][OR] TWO *", _
+        doseString Like "*1 [TO][OR] 2*", _
+        doseString Like "*ONE - TWO*", _
+        doseString Like "*1 - 2*" And Not doseString Like "*1 - 2 DAYS*"
+        'doseString Like "1[ TO][TOR][ 2OR][2 ]*"
+        'doseString Like "1[ -][-2 ][2 ]*", _
+        'doseString Like "*1-2*", _
+        'doseString Like "*1 OR 2 *", _
+        'doseString Like "1[ TO][TOR][ 2OR][2 ]*", _
+        'doseString Like "*ONE[ -][ -T][ TW][WO]*", _
+
+            doseRangeSpecified = True
+            setDoseRangeLowAs 1, unit, code, system
+            setDoseRangeHighAs 2, unit, code, system
+            'Debug.Print "1-2 detected", dosage.doseRange.high.value, dosage.doseQuantity.value
+
+    '~1-3
+    Case doseString Like "1 - 3*", doseString Like "*ONE TO THREE*" And Not doseString Like "*ONE TO THREE TIMES*"
+        doseRangeSpecified = True
+        setDoseRangeLowAs 1, unit, code, system
+        setDoseRangeHighAs 3, unit, code, system
+    ' need more tests for dose range specified e.g. 2-3
+        
+    '~2-3
+    Case doseString Like "2 - 3*", doseString Like "*TWO TO THREE*" And Not doseString Like "*TWO TO THREE TIMES*"
+        doseRangeSpecified = True
+        setDoseRangeLowAs 2, unit, code, system
+        setDoseRangeHighAs 3, unit, code, system
+        
+    '~1-4
+    Case doseString Like "1 - 4*"
+        'Debug.Print "1-4 detected"
+        doseRangeSpecified = True
+        setDoseRangeLowAs 1, unit, code, system
+        setDoseRangeHighAs 4, unit, code, system
+    
+    '~2-4
+    Case doseString Like "2 - 4*"
+        doseRangeSpecified = True
+        setDoseRangeLowAs 2, unit, code, system
+        setDoseRangeHighAs 4, unit, code, system
+        
+    '~3-4
+    Case doseString Like "3 - 4*", doseString Like "TAKE 3 TO 4*"
+        doseRangeSpecified = True
+        setDoseRangeLowAs 3, unit, code, system
+        setDoseRangeHighAs 4, unit, code, system
+        
+    '~1-6
+    Case doseString Like "1 - 6*"
+        'Debug.Print "1-6 detected"
+        doseRangeSpecified = True
+        setDoseRangeLowAs 1, unit, code, system
+        setDoseRangeHighAs 6, unit, code, system
+        
+        
+    '~2-10
+    Case doseString Like "2 - 10*"
+        doseRangeSpecified = True
+        setDoseRangeLowAs 2, unit, code, system
+        setDoseRangeHighAs 10, unit, code, system
+End Select
+
+Select Case True
+
+    '~take half a tab
+    Case doseString Like "*HALF A TAB*" And doseRangeSpecified = False, _
+        doseString Like "*TAKE HALF*" And doseRangeSpecified = False, _
+        doseString Like "*HALF TO BE TAKEN*" And doseRangeSpecified = False
+            setDoseQuantityAs 0.5, unit, code, system
+        
+    '~take 1
+    Case doseString Like "*1 ?[!RO]*" And doseRangeSpecified = False, _
+        doseString Like "*ONE ?[!RO]*" And doseRangeSpecified = False And Not doseString Like "*ONE AND A HALF*", _
+        doseString Like "*1[ QTBO][QTBOD][!R]*" And doseRangeSpecified = False, _
+        doseString Like "TAKE ONE*" And doseRangeSpecified = False And Not doseString Like "*ONE AND A HALF*", _
+        doseString Like "INHALE ONE*" And doseRangeSpecified = False, _
+        doseString Like "ONE *" And doseRangeSpecified = False, _
+        doseString Like "ONE, *" And doseRangeSpecified = False, _
+        doseString Like "1*" And doseRangeSpecified = False And Not doseString Like "*1.*"
+        'will doserangespecified have had a chance to be set before this case evaluated?? ************************
+        ' therefore evaulate the ranges fisrst and set the boolean before evaluating singles.
+        setDoseQuantityAs 1, unit, code, system
+        'Debug.Print "1 detected"
+        
+    '~take one and a half
+    Case doseString Like "*ONE AND A HALF*" And doseRangeSpecified = False
+        setDoseQuantityAs 1.5, unit, code, system
+        
+    '~take 2
+    Case doseString Like "*TWO*" And doseRangeSpecified = False, _
+        doseString Like "*2 [BTQ]D*" And doseRangeSpecified = False, _
+        doseString Like "*2[BTQ]D*" And doseRangeSpecified = False, _
+        doseString Like "*2[A-GI-Z] *" And doseRangeSpecified = False, _
+        doseString Like "2PUF*" And doseRangeSpecified = False, _
+        doseString Like "2 *" And doseRangeSpecified = False, _
+        doseString Like "*TAKE 2*" And doseRangeSpecified = False And Not doseString Like "*TAKE 2.*"
+            setDoseQuantityAs 2, unit, code, system
+        'doseString Like "*[!1]2[!.45-]*" And doseRangeSpecified = False, _
+
+        'Debug.Print "2 detected", unit
+        
+    '~ take 3
+    Case doseString Like "3 *" And doseRangeSpecified = False, _
+        doseString Like "THREE*" And doseRangeSpecified = False And Not doseString Like "THREE TIME*", _
+        doseString Like "TAKE 3*" And doseRangeSpecified = False, _
+        doseString Like "TAKE THREE*" And doseRangeSpecified = False, _
+        doseString Like "INHALE 3*" And doseRangeSpecified = False
+            setDoseQuantityAs 3, unit, code, system
+            
+    '~ take 4
+    Case doseString Like "4 *" And doseRangeSpecified = False, _
+        doseString Like "FOUR*" And doseRangeSpecified = False And Not doseString Like "FOUR TIME*", _
+        doseString Like "TAKE 4*" And doseRangeSpecified = False, _
+        doseString Like "TAKE FOUR*" And doseRangeSpecified = False, _
+        doseString Like "INHALE 4*" And doseRangeSpecified = False
+            setDoseQuantityAs 4, unit, code, system
+End Select
+'Debug.Print doseRangeSpecified
+End Sub
+Private Sub parseStringForMethod(doseString As String)
+'inhale,insert,take,apply etc.
+
+' R3 Include codes from http://snomed.info/sct  where concept is-a 422096002 (Dosing instruction fragment)
+' R5 Include codes from http://snomed.info/sct icon where concept is-a 736665006 (Dose form administration method)
+
+'R3 is missing the code to infuse. Therefore cannot code route-private subcut and method-infuse for syringe drivers.
+'R3 Method is not a dict as far as I can tell, so only one code.
+
+Dim dict As Object
+Set dict = CreateObject("Scripting.Dictionary")
+If Not dict.Exists(key) Then
+    dict.Add "417924000", "Apply"
+    dict.Add "418283001", "Administer"
+    dict.Add "419385000", "Use"
+    dict.Add "419582001", "Give"
+    dict.Add "419652001", "Take"
+    dict.Add "419747000", "Chew"
+    dict.Add "420045007", "Suck"
+    'dict.Add "420246001", "At"
+    dict.Add "420247005", "Dosing instruction imperative"
+    'dict.Add "420295001", "Only"
+    'dict.Add "420341009", "Constant"
+    dict.Add "420360002", "Sniff"
+    dict.Add "420484009", "private subtract - dosing instruction fragment"
+    'dict.Add "420503003", "As"
+    'dict.Add "420561004", "Or"
+    dict.Add "420604000", "Finish"
+    dict.Add "420606003", "Shampoo"
+    dict.Add "420620005", "Push"
+    'dict.Add "420652005", "Until gone"
+    dict.Add "420771004", "Upon"
+    'dict.Add "420806001", "Per"
+    dict.Add "420883007", "Sparingly"
+    'dict.Add "420942008", "Call"
+    'dict.Add "420974001", "When"
+    'dict.Add "421035004", "To"
+    dict.Add "421066005", "Place"
+    'dict.Add "421067001", "Then"
+    dict.Add "421134003", "Inhale"
+    'dict.Add "421139008", "Hold"
+    'dict.Add "421206002", "Multiply"
+    dict.Add "421257003", "Insert"
+    'dict.Add "421286000", "Discontinue"
+    dict.Add "421298005", "Swish and swallow"
+    dict.Add "421399004", "Dilute"
+    'dict.Add "421463005", "With"
+    'dict.Add "421484000", "Then discontinue"
+    dict.Add "421521009", "Swallow"
+    dict.Add "421538008", "Instill"
+    'dict.Add "421548005", "Until"
+    'dict.Add "421612001", "Every"
+    dict.Add "421682005", "Dissolve"
+    'dict.Add "421718005", "Before"
+    'dict.Add "421723005", "Now"
+    'dict.Add "421769005", "Follow directions"
+    'dict.Add "421803000", "If"
+    dict.Add "421805007", "Swish"
+    'dict.Add "421829000", "And"
+    'dict.Add "421832002", "Twice"
+    'dict.Add "421939007", "Follow"
+    'dict.Add "421984009", "Until finished"
+    'dict.Add "421994004", "During"
+    'dict.Add "422033008", "Divide"
+    'dict.Add "422106007", "Add"
+    'dict.Add "422114001", "Once"
+    dict.Add "422145002", "Inject"
+    dict.Add "422152000", "Wash"
+    dict.Add "422219000", "Sprinkle"
+    'dict.Add "422327006", "Then stop"
+
+End If
+
+Dim varKey As Variant
+Dim arrItems As Variant
+Dim arrKeys As Variant
+Dim code As String
+Dim display As String
+
+arrItems = dict.Items
+arrKeys = dict.Keys
+
+For varKey = 0 To UBound(arrItems)
+    If doseString Like "*" & UCase(arrItems(varKey)) & "*" Then
+       'Debug.Print "SDU found ", UCase(arrItems(varKey)), arrKeys(varKey)
+       display = arrItems(varKey)
+       code = arrKeys(varKey)
+       setMethodAs display, code
+    End If
+Next
+
+
+End Sub
+
+
+Private Sub parseStringByDividedDay(doseString As String)
+'timing by divided day
+Select Case True
+    Case doseString Like "*[!RO-] 6 TIME*", doseString Like "*[!RO-] SIX TIME*"
+        dosage.eTiming.repeat.frequency = 6
+        dosage.eTiming.repeat.period = 1
+        dosage.eTiming.repeat.periodUnit = d
+    Case doseString Like "*[!RO-] 5 TIME*", doseString Like "*[!RO-] FIVE TIME*", doseString Like "5 TIMES A DAY*"
+        dosage.eTiming.repeat.frequency = 5
+        dosage.eTiming.repeat.period = 1
+        dosage.eTiming.repeat.periodUnit = d
+    Case doseString Like "*[!RO-] 4 TIME*", _
+        doseString Like "*[!RO-] FOUR TIME*", _
+        doseString Like "* 4 TIME*" And Not doseString Like "*TO 4 TI*" And Not doseString Like "*UP[T ][TO][ O]*", _
+        doseString Like "*FOUR TIME*" And Not doseString Like "*TO FOUR TI*" And Not doseString Like "*UP[T ][TO][ O]*"
+        'Debug.Print "four times a day detected"
+        dosage.eTiming.repeat.frequency = 4
+        dosage.eTiming.repeat.period = 1
+        dosage.eTiming.repeat.periodUnit = d
+    Case doseString Like "*[!RO-] 3 TIME*", _
+        doseString Like "*THREE TIME*" And Not doseString Like "* OR THREE TIME*" And Not doseString Like "*TO THREE TIME*"
+            dosage.eTiming.repeat.frequency = 3
+            dosage.eTiming.repeat.period = 1
+            dosage.eTiming.repeat.periodUnit = d
+    Case doseString Like "*3 - 4 TIMES A DAY*"
+        dosage.eTiming.repeat.frequency = 3
+        dosage.eTiming.repeat.frequencyMax = 4
+        dosage.eTiming.repeat.period = 1
+        dosage.eTiming.repeat.periodUnit = d
+    Case doseString Like "*TWO TO THREE TIMES A DAY*"
+        dosage.eTiming.repeat.frequency = 2
+        dosage.eTiming.repeat.frequencyMax = 3
+        dosage.eTiming.repeat.period = 1
+        dosage.eTiming.repeat.periodUnit = d
+    Case doseString Like "*[!RO-] 2 TIME*", _
+        doseString Like "*[!RO-] TWO TIME*", _
+        doseString Like "*TWICE [AD][ DA][DI]*", _
+        doseString Like "*TWICE*DAY*"
+            dosage.eTiming.repeat.frequency = 2
+            dosage.eTiming.repeat.period = 1
+            dosage.eTiming.repeat.periodUnit = d
+    Case doseString Like "**ONCE [AD][ DA][DI]*", _
+        doseString Like "*EVERY DAY*", _
+        doseString Like "# A DAY*", _
+        doseString Like "* A DAY*" And Not doseString Like "*ICE DAILY*" And Not doseString Like "*TIMES DAILY*" And Not doseString Like "*TIMES A DAY*", _
+        doseString Like "*DAILY*" And Not doseString Like "*ICE DAILY*" And Not doseString Like "*TIMES DAILY*" And Not doseString Like "*TIMES A DAY*", _
+        doseString Like "*EACH DAY*", _
+        doseString Like "*ONCE/DAY*", _
+        doseString Like "*PER DAY*" And Not doseString Like "*MAX*PER DAY*"
+            dosage.eTiming.repeat.frequency = 1
+            dosage.eTiming.repeat.period = 1
+            dosage.eTiming.repeat.periodUnit = d
+    Case doseString Like "*ALT*DIE*", doseString Like "*ALT* DAY*"
+        dosage.eTiming.repeat.frequency = 1
+        dosage.eTiming.repeat.period = 2
+        dosage.eTiming.repeat.periodUnit = d
+End Select
+End Sub
+
+Private Sub parseStringByTiming(doseString As String)
+'timing by time period
+Select Case True
+    Case doseString Like "*EVERY 72*"
+        dosage.eTiming.repeat.frequency = 1
+        dosage.eTiming.repeat.period = 72
+        dosage.eTiming.repeat.periodUnit = h
+    Case doseString Like "*EVERY 12*", doseString Like "*EVERY TWE*"
+        dosage.eTiming.repeat.frequency = 1
+        dosage.eTiming.repeat.period = 12
+        dosage.eTiming.repeat.periodUnit = h
+    Case doseString Like "*EVERY 8*", doseString Like "*EVERY EIGHT H*"
+        dosage.eTiming.repeat.frequency = 1
+        dosage.eTiming.repeat.period = 8
+        dosage.eTiming.repeat.periodUnit = h
+    Case doseString Like "*6[ -][-8][ 8H][HOR][ROLUS ]*"
+        dosage.eTiming.repeat.frequency = 1
+        dosage.eTiming.repeat.period = 6
+        dosage.eTiming.repeat.periodMax = 8
+        dosage.eTiming.repeat.periodUnit = h
+    Case doseString Like "*[!-O] SIX[ H][HOR][ROLUS ]*", doseString Like "*[!-O] 6[ H][HOR][ROLUS ]*"
+        dosage.eTiming.repeat.frequency = 1
+        dosage.eTiming.repeat.period = 6
+        dosage.eTiming.repeat.periodUnit = h
+    Case doseString Like "*FOUR[ -][- ][ S][SI][IX][X ][ H][HOR][ROLUS ]*", _
+        doseString Like "*4[ -][-6][ 6H][HOR][ROLUS ]*", _
+        doseString Like "*FOUR TO SIX H[OR][LUS ]*", _
+        doseString Like "*4 TO 6 H[OR][LUS ]*", _
+        doseString Like "*4 - 6 H[OR][LUS ]*"
+            dosage.eTiming.repeat.frequency = 1
+            dosage.eTiming.repeat.period = 4
+            dosage.eTiming.repeat.periodMax = 6
+            dosage.eTiming.repeat.periodUnit = h ' broken by "Every 4-6 Hours Up To Four Times A Day"
+    Case doseString Like "*[!-O] FOUR[ H][HOR][ROLUS ]*", _
+        doseString Like "*[!-O] 4[ H][HOR][ROLUS ]*" And Not doseString Like "*MAX*4[ H][HOR][ROLUS ]*"
+            dosage.eTiming.repeat.frequency = 1
+            dosage.eTiming.repeat.period = 4
+            dosage.eTiming.repeat.periodUnit = h
+    Case doseString Like "*[!-O] 2[ H][HOR][ROLUS ]*"
+        dosage.eTiming.repeat.frequency = 1
+            dosage.eTiming.repeat.period = 2
+            dosage.eTiming.repeat.periodUnit = h
+    Case doseString Like "*EVERY HOUR*"
+        dosage.eTiming.repeat.frequency = 1
+        dosage.eTiming.repeat.period = 1
+        dosage.eTiming.repeat.periodUnit = h
+    Case doseString Like "*ONCE A WEEK*", doseString Like "*WEEKLY*" And Not doseString Like "*ICE WEEKLY*" And Not doseString Like "*TIMES WEEKLY*" 'And Not dosestring Like "*FOR ## WEEKS*" 'need a few more week tests eg once or twice
+        dosage.eTiming.repeat.frequency = 1
+        dosage.eTiming.repeat.period = 1
+        dosage.eTiming.repeat.periodUnit = wk
+    Case doseString Like "*EVERY 7 DAYS*"
+        dosage.eTiming.repeat.frequency = 1
+        dosage.eTiming.repeat.period = 7
+        dosage.eTiming.repeat.periodUnit = d
+    Case doseString Like "*TWICE A WEEK*" And Not doseString Like "*ONCE OR TWICE A WEEK*"
+        dosage.eTiming.repeat.frequency = 2
+        dosage.eTiming.repeat.period = 1
+        dosage.eTiming.repeat.periodUnit = wk
+    Case doseString Like "*3 TIMES WEEKLY*" Or doseString Like "* 3 TIMES A WEEK*"
+        dosage.eTiming.repeat.frequency = 3
+        dosage.eTiming.repeat.period = 1
+        dosage.eTiming.repeat.periodUnit = wk
+    Case doseString Like "*ONCE A MONTH*"
+        dosage.eTiming.repeat.frequency = 1
+        dosage.eTiming.repeat.period = 1
+        dosage.eTiming.repeat.periodUnit = mo
+        
+        
+        
+    End Select
+End Sub
+
+Private Sub parseStringForDuration(doseString As String)
+
+' to treat infection --> dosage.text (there is no property for reason unless asneededcodeableconcept)
+
+Dim daysDuration As String
+Dim weeksDuration As String
+Dim hoursDuration As String
+Dim Pattern As String
+Dim resultTemp() As String
+Dim durationStr As String
+Dim durationValue As Double
+Dim durationUnit As String
+Dim durationUnitCode As String
+Dim durationValueLow As Double
+Dim durationValueHigh As Double
+Dim maxBool As Boolean
+
+durationStr = RegexExtract(doseString, "FOR\s?(?:.{0,15})(?:DAYS?|WE*KS?|HO?U?RS?|MIN|SEC)") 'amend hours minutes seconds.
+'detect, flag, remove: "FIRST", "MAXIMUM", "UP TO"
+
+Select Case True
+    Case durationStr Like "*FIRST*"
+        durationStr = Replace(durationStr, "FIRST", "")
+    Case durationStr Like "*MAX*"
+        durationStr = Replace(durationStr, "MAXIMUM", "")
+        durationStr = Replace(durationStr, "MAX", "")
+        maxBool = True
+    Case durationStr Like "*UP TO*"
+        durationStr = Replace(durationStr, "UP TO", "")
+        maxBool = True
+End Select
+
+'Debug.Print durationStr
+
+
+'detect and break apart stated range. "-", " OR ", " TO "
+
+Pattern = "FOR\s?(?:(\d+)|(\d+)-(\d+)|(\b\w*\b)|(?:(\b\w*\b)\s?(?:\-|TO|OR)\s?(\b\w*\b)))\s?(?:DAYS?|WE*KS?|HO?U?RS?|MIN|SEC)"
+
+resultTemp = Split(RegexExtractSubmatch(durationStr, Pattern, ", "), ", ")
+
+For k = 0 To UBound(resultTemp)
+    'Debug.Print k & " " & resultTemp(k)
+    resultTemp(k) = replaceWrittenNumberWithDigit(resultTemp(k))
+    If resultTemp(k) = "" Then
+        resultTemp(k) = "0"
+    ElseIf resultTemp(k) = "A" Then 'A DAY / A WEEK etc
+        resultTemp(k) = "1"
+    End If
+Next k
+
+Select Case True
+    Case UBound(resultTemp) = 5
+        durationValue = CDbl(resultTemp(0)) + CDbl(resultTemp(3))
+        durationValueLow = CDbl(resultTemp(1)) + CDbl(resultTemp(4))
+        durationValueHigh = CDbl(resultTemp(2)) + CDbl(resultTemp(5))
+End Select
+
+'Debug.Print UBound(resultTemp), durationValue, durationValueLow, durationValueHigh
+
+Select Case True
+    Case durationStr Like "*DAY*"
+        durationUnit = "day"
+        durationUnitCode = "d"
+    Case durationStr Like "*WEEK*", durationStr Like "*WK*"
+        durationUnit = "week"
+        durationUnitCode = "wk"
+    Case durationStr Like "*HOUR*", durationStr Like "*HR*"
+        durationUnit = "hour"
+        durationUnitCode = "h"
+    Case durationStr Like "*MIN*"
+        durationUnit = "minute"
+        durationUnitCode = "min"
+    Case durationStr Like "*SEC*"
+        durationUnit = "second"
+        durationUnitCode = "s"
+End Select
+
+'Debug.Print durationUnit
+
+'need months' duration
+
+'Debug.Print daysDuration, weeksDuration, hoursDuration
+
+' set duration and durationmax rather than boundsrange? not clear from NHSD examples
+' boundsRange makes sense if it is a whole course (Abx / steroids). Difficult to use if "up to 4 days": set low to 0
+' duration seems to apply to the time of dose according to FIHR.
+' edge cases??? tranexamic, pill, titration 5mg for 2 weeks then 10mg for 2 weeks, leave on for 5 minutes ???
+
+Select Case True
+    Case durationUnitCode = "wk", durationUnitCode = "d", durationUnitCode = "h"
+    
+        Select Case True
+            Case durationStr Like "*FOR A WEEK*"
+                setDosageTimingRepeatBoundsDurationAs 1, "week", "wk"
+            Case Len(durationStr) > 0 And durationValueHigh > 0
+                setDosageTimingRepeatBoundsRangeLowAs durationValueLow, durationUnit, durationUnitCode
+                setDosageTimingRepeatBoundsRangeHighAs durationValueHigh, durationUnit, durationUnitCode
+            Case Len(durationStr) > 0 And maxBool = True
+                setDosageTimingRepeatBoundsRangeLowAs 0, durationUnit, durationUnitCode
+                setDosageTimingRepeatBoundsRangeHighAs durationValue, durationUnit, durationUnitCode
+            Case Len(durationStr) > 0
+                setDosageTimingRepeatBoundsDurationAs durationValue, durationUnit, durationUnitCode
+        End Select
+                 
+    Case durationUnitCode = "min", durationUnitCode = "s"
+
+        Select Case True
+            Case Len(durationStr) > 0 And durationValueHigh > 0 And durationUnitCode = "min"
+                dosage.eTiming.repeat.duration = durationValueLow
+                dosage.eTiming.repeat.durationMax = durationValueHigh
+                dosage.eTiming.repeat.durationUnit = Min
+            Case Len(durationStr) > 0 And durationUnitCode = "min"
+                dosage.eTiming.repeat.duration = durationValue
+                dosage.eTiming.repeat.durationUnit = Min
+            Case Len(durationStr) > 0 And durationValueHigh > 0 And durationUnitCode = "s"
+                dosage.eTiming.repeat.duration = durationValueLow
+                dosage.eTiming.repeat.durationMax = durationValueHigh
+                dosage.eTiming.repeat.durationUnit = s
+            Case Len(durationStr) > 0 And durationUnitCode = "s"
+                dosage.eTiming.repeat.duration = durationValue
+                dosage.eTiming.repeat.durationUnit = s
+        End Select
+End Select
+
+End Sub
+
+Private Sub parseStringForAdditionalInstr(doseString As String)
+'is this needed? - BNF warning labels not usually part of dosage instructions.
+Dim dict As Object
+Set dict = CreateObject("Scripting.Dictionary")
+If Not dict.Exists(key) Then
+    dict.Add "419111009", "Allow to dissolve under the tongue. Do not transfer from this container. Keep tightly closed. Discard eight weeks after opening"
+    dict.Add "1116431000001100", "As directed"
+    dict.Add "418521000", "Avoid exposure of skin to direct sunlight or sun lamps"
+    dict.Add "419439004", "Caution flammable: keep away from fire or flames"
+    dict.Add "418194009", "Contains an aspirin-like medicine"
+    dict.Add "417980006", "Contains aspirin"
+    dict.Add "418850000", "Contains aspirin and paracetamol. Do not take with any other paracetamol products"
+    dict.Add "417995008", "Dissolve or mix with water before taking"
+    dict.Add "419529008", "Dissolved under the tongue"
+    dict.Add "419444006", "Do not stop taking this medicine except on your doctor's advice"
+    dict.Add "418281004", "Do not take anything containing aspirin while taking this medicine"
+    dict.Add "420110001", "Do not take indigestion remedies at the same time of day as this medicine"
+    dict.Add "420082003", "Do not take indigestion remedies or medicines containing iron or zinc at the same time of day as this medicine"
+    dict.Add "419115000", "Do not take milk, indigestion remedies, or medicines containing iron or zinc at the same time of day as this medicine"
+    dict.Add "420003005", "Do not take more than . . . in 24 hours"
+    dict.Add "418443006", "Do not take more than . . . in 24 hours or . . . in any one week"
+    dict.Add "419437002", "Do not take more than 2 at any one time. Do not take more than 8 in 24 hours"
+    dict.Add "418637003", "Do not take with any other paracetamol products"
+    dict.Add "419473009", "Each"
+    dict.Add "421769005", "Follow directions"
+    dict.Add "311501008", "Half to one hour before food"
+    dict.Add "418991002", "Sucked or chewed"
+    dict.Add "418693002", "Swallowed whole, not chewed"
+    dict.Add "418577003", "Take at regular intervals. Complete the prescribed course unless otherwise directed"
+    dict.Add "717154004", "Take on an empty stomach"
+    dict.Add "421484000", "Then discontinue"
+    dict.Add "422327006", "Then stop"
+    dict.Add "419974005", "This medicine may color the urine"
+    dict.Add "417929005", "Times"
+    dict.Add "94171000001102", "To be administered immediately"
+    dict.Add "154271000001108", "To be continued"
+    dict.Add "420162004", "To be spread thinly"
+    dict.Add "421984009", "Until finished"
+    dict.Add "420652005", "Until gone"
+    dict.Add "1287351008", "Until next appointment"
+    dict.Add "1287353006", "Until symptoms improve"
+    dict.Add "428579001", "Use with caution"
+    dict.Add "419822006", "Warning. Avoid alcoholic drink"
+    dict.Add "418071006", "Warning. Causes drowsiness which may continue the next day. If affected do not drive or operate machinery. Avoid alcoholic drink"
+    dict.Add "418849000", "Warning. Follow the printed instructions you have been given with this medicine"
+    dict.Add "418639000", "Warning. May cause drowsiness"
+    dict.Add "418954008", "Warning. May cause drowsiness. If affected do not drive or operate machinery"
+    dict.Add "418914006", "Warning. May cause drowsiness. If affected do not drive or operate machinery. Avoid alcoholic drink"
+    dict.Add "1116481000001100", "With food"
+    dict.Add "311504000", "With or after food"
+    dict.Add "419303009", "With plenty of water"
+End If
+
+Dim varKey As Variant
+Dim arrItems As Variant
+Dim arrKeys As Variant
+Dim code As String
+Dim display As String
+
+arrItems = dict.Items
+arrKeys = dict.Keys
+
+For varKey = 0 To UBound(arrItems)
+    If doseString Like "*" & UCase(arrItems(varKey)) & "*" Then
+       'Debug.Print "SDU found ", UCase(arrItems(varKey)), arrKeys(varKey)
+       display = arrItems(varKey)
+       code = arrKeys(varKey)
+       setAdditionalInstructionAs 0, display, code
+    End If
+Next
+
+End Sub
+
+Private Sub parseStringByFIHRLatinWhen(doseString As String)
+'timing by FIHR "latin" code - when
+
+Dim minuteOffset As Integer
+
+If (doseString Like "*MIN*BEFORE*" Or doseString Like "*MIN*AFTER*") And Not doseString Like "*ADMIN*" Then
+    Debug.Print RegexExtract(doseString, "\d{1,3}(?=\s?MIN.*BEFORE|\s?MIN.*AFTER)")
+    minuteOffset = CInt(RegexExtract(doseString, "\d{1,3}(?=\s?MIN.*BEFORE|\s?MIN.*AFTER)"))
+ElseIf doseString Like "*#*HOUR*BEFORE*" Or doseString Like "*#*HOUR*AFTER*" Then
+    minuteOffset = 60 * CInt(RegexExtract(doseString, "\d{1,3}(?=\s?HOUR.*BEFORE|\s?HOUR.*AFTER)"))
+ElseIf doseString Like "*ONE HOUR*BEFORE*" Or doseString Like "*ONE HOUR*AFTER*" Then
+    minuteOffset = 60
+End If
+
+'Default
+'HS
+Select Case True
+    Case doseString Like "* HS *", doseString Like "* BED*"
+        dosage.eTiming.repeat.when(1) = HS
+        dosage.eTiming.repeat.offset = minuteOffset
+End Select
+'WAKE
+Select Case True
+    Case doseString Like "* WAKE *", doseString Like "* WAKING*"
+        dosage.eTiming.repeat.when(2) = WAKE 'check array position matches enum
+        dosage.eTiming.repeat.offset = minuteOffset
+End Select
+'c
+Select Case True
+    Case doseString Like "* C *", doseString Like "* WITH FOOD*", doseString Like "* WITH MEAL*"
+        dosage.eTiming.repeat.when(3) = c 'check array position matches enum
+End Select
+    'Debug.Print "1st case checked"
+'CM
+Select Case True
+    Case doseString Like "* CM *", doseString Like "* BREAKFAST*" And Not doseString Like "* BEFORE BREAKFAST*" And Not doseString Like "* AFTER BREAKFAST*"
+        dosage.eTiming.repeat.when(4) = CM 'check array position matches enum
+End Select
+'CD
+Select Case True
+    Case doseString Like "* CD *", doseString Like "*LUNCH*" And Not doseString Like "* BEFORE LUNCH*" And Not doseString Like "* AFTER LUNCH*"
+        dosage.eTiming.repeat.when(5) = cd
+End Select
+'CV
+Select Case True
+    Case doseString Like "* CV *", doseString Like "* DINNER*" And Not doseString Like "* BEFORE DINNER*" And Not doseString Like "* AFTER DINNER*"
+        dosage.eTiming.repeat.when(6) = CV
+End Select
+'AC
+Select Case True
+    Case doseString Like "* AC *", doseString Like "* BEFORE MEAL*", doseString Like "* BEFORE FOOD*"
+        dosage.eTiming.repeat.when(7) = AC
+        dosage.eTiming.repeat.offset = minuteOffset
+End Select
+'ACM
+Select Case True
+    Case doseString Like "* ACM *", doseString Like "* BEFORE BREAKFAST*"
+        dosage.eTiming.repeat.when(8) = ACM
+        dosage.eTiming.repeat.offset = minuteOffset
+End Select
+'ACD
+Select Case True
+    Case doseString Like "* ACD *", doseString Like "* BEFORE LUNCH*"
+        dosage.eTiming.repeat.when(9) = ACD
+        dosage.eTiming.repeat.offset = minuteOffset
+End Select
+'ACV
+Select Case True
+    Case doseString Like "* ACV *", doseString Like "* BEFORE DINNER*"
+        dosage.eTiming.repeat.when(10) = ACV
+        dosage.eTiming.repeat.offset = minuteOffset
+End Select
+'PC
+Select Case True
+    Case doseString Like "* PC *", doseString Like "* AFTER FOOD*" And Not doseString Like "* WITH OR AFTER FOOD*"
+        dosage.eTiming.repeat.when(11) = PC
+        dosage.eTiming.repeat.offset = minuteOffset
+End Select
+    'Debug.Print "2nd case checked"
+    
+'PCM
+Select Case True
+    Case doseString Like "* ACM *", doseString Like "* AFTER BREAKFAST*"
+        dosage.eTiming.repeat.when(12) = PCM
+        dosage.eTiming.repeat.offset = minuteOffset
+End Select
+'PCD
+Select Case True
+    Case doseString Like "* ACD *", doseString Like "* AFTER LUNCH*"
+        dosage.eTiming.repeat.when(13) = PCD
+        dosage.eTiming.repeat.offset = minuteOffset
+End Select
+'PCV
+Select Case True
+    Case doseString Like "* ACV *", doseString Like "* BEFORE DINNER*"
+        dosage.eTiming.repeat.when(14) = PCV
+        dosage.eTiming.repeat.offset = minuteOffset
+End Select
+'MORN
+Select Case True
+    Case doseString Like "*MORNING*" And Not doseString Like "* EARLY MORNING*" And Not doseString Like "* LATE MORNING*"
+        dosage.eTiming.repeat.when(15) = MORN
+        'Debug.Print "morning"
+End Select
+'MORNearly
+Select Case True
+    Case doseString Like "* EARLY MORNING*"
+        dosage.eTiming.repeat.when(16) = MORNearly
+End Select
+'MORNlate
+Select Case True
+    Case doseString Like "* LATE MORNING*"
+        dosage.eTiming.repeat.when(17) = MORNlate
+End Select
+'NOON
+Select Case True
+    Case doseString Like "* NOON*", doseString Like "*MIDDAY*"
+        dosage.eTiming.repeat.when(18) = NOON
+End Select
+'AFT
+Select Case True
+    Case doseString Like "* AFTERNOON*" And Not doseString Like "* EARLY AFTERNOON*" And Not doseString Like "* LATE AFTERNOON*"
+        dosage.eTiming.repeat.when(19) = AFT
+End Select
+'AFTearly
+Select Case True
+    Case doseString Like "* EARLY AFTERNOON*"
+        dosage.eTiming.repeat.when(20) = AFTearly
+End Select
+'AFTlate
+Select Case True
+    Case doseString Like "* LATE AFTERNOON*"
+        dosage.eTiming.repeat.when(21) = AFTlate
+End Select
+'EVE
+Select Case True
+    Case doseString Like "*TEATIME*", doseString Like "* EVE[, ]*", doseString Like "* EVENING*" And Not doseString Like "* EARLY EVENING*" And Not doseString Like "* LATE EVENING*"
+        dosage.eTiming.repeat.when(22) = EVE
+End Select
+'EVEearly
+Select Case True
+    Case doseString Like "* EARLY EVE*"
+        dosage.eTiming.repeat.when(23) = EVEearly
+End Select
+'EVElate
+Select Case True
+    Case doseString Like "* LATE EVE*"
+        dosage.eTiming.repeat.when(24) = EVElate
+End Select
+'NIGHT
+Select Case True
+    Case doseString Like "*NIGHT*" And Not doseString Like "* BEDTIME*"
+        dosage.eTiming.repeat.when(25) = NIGHT
+        'Debug.Print "night"
+End Select
+'PHS
+Select Case True
+    Case doseString Like "* AFTER SLEEP*"
+        dosage.eTiming.repeat.when(26) = PHS
+        dosage.eTiming.repeat.offset = minuteOffset
+End Select
+'IMD
+Select Case True
+    Case doseString Like "* IMMEDIATE*", doseString Like "* STAT*", doseString Like "* NOW*"
+        dosage.eTiming.repeat.when(27) = IMD
+End Select
+   
+    
+    
+    
+End Sub
+Private Sub parseStringByFIHRLatinCode(doseString As String)
+'timing by FIHR "latin" code - code
+Select Case True
+    Case doseString Like "*BID*"
+        setTimingCodeAs (BID)
+    Case doseString Like "*TID*"
+        setTimingCodeAs (TID)
+    Case doseString Like "*QID*"
+        setTimingCodeAs (QID)
+    Case doseString Like "*AM *"
+        setTimingCodeAs (AM)
+    Case doseString Like "*PM*"
+        setTimingCodeAs (PM)
+    Case doseString Like "*QD *"
+        setTimingCodeAs (QD)
+    Case doseString Like "*QOD*"
+        setTimingCodeAs (QOD)
+    Case doseString Like "*Q1H*"
+        setTimingCodeAs (Q1H)
+    Case doseString Like "*Q2H*"
+        setTimingCodeAs (Q2H)
+    Case doseString Like "*Q3H*"
+        setTimingCodeAs (Q3H)
+    Case doseString Like "*Q4H*"
+        setTimingCodeAs (Q4H)
+    Case doseString Like "*Q6H*"
+        setTimingCodeAs (Q6H)
+    Case doseString Like "*Q8H*"
+        setTimingCodeAs (Q8H)
+    Case doseString Like "*BED *"
+        setTimingCodeAs (BED)
+    Case doseString Like "*wk *"
+        setTimingCodeAs (workaround_wk)
+    Case doseString Like "*mo *"
+        setTimingCodeAs (workaround_mo)
+End Select
+End Sub
+Private Sub parseStringCommonLatin(doseString As String)
+'timing by common Latin
+Select Case True
+    
+    'OM, every morning
+    Case doseString Like "*#OM", doseString Like "* OM *"
+        'dosage.eTiming.repeat.frequency = 1
+        'dosage.eTiming.repeat.period = 1
+        'dosage.eTiming.repeat.periodUnit = d
+        dosage.eTiming.repeat.when(0) = MORN
+    'ON , at night
+    Case doseString Like "*#ON", _
+        doseString Like "*NOCT*", _
+        doseString Like "ON", _
+        doseString Like "*# ON *" And Not (doseString Like "*ON DAY*" Or doseString Like "*ON THE*")
+            'dosage.eTiming.repeat.frequency = 1
+            'dosage.eTiming.repeat.period = 1
+            'dosage.eTiming.repeat.periodUnit = d
+            dosage.eTiming.repeat.when(0) = NIGHT
+    'OD, once a day
+    Case doseString Like "*#OD", doseString Like "OD", doseString Like "*# OD", doseString Like "OD *"
+        dosage.eTiming.repeat.frequency = 1
+        dosage.eTiming.repeat.period = 1
+        dosage.eTiming.repeat.periodUnit = d
+    'MID, noon
+    Case doseString Like "*#MID"
+        'dosage.eTiming.repeat.frequency = 1
+        'dosage.eTiming.repeat.period = 1
+        'dosage.eTiming.repeat.periodUnit = d
+        dosage.eTiming.repeat.when(0) = NOON
+    'BD, B.D. , twice a day
+    Case doseString Like "*#BD", doseString Like "*#B.D.", doseString Like "* B.D.*", doseString Like "* BD*"
+        dosage.eTiming.repeat.frequency = 2
+        dosage.eTiming.repeat.period = 1
+        dosage.eTiming.repeat.periodUnit = d
+    'TDS, T.D.S. , three times a day
+    Case doseString Like "*#TDS", doseString Like "*#T.D.S.", doseString Like "# TDS*", doseString Like "*TDS*"
+        dosage.eTiming.repeat.frequency = 3
+        dosage.eTiming.repeat.period = 1
+        dosage.eTiming.repeat.periodUnit = d
+    'QDS, Q.D.s. , four times a day
+    Case doseString Like "*QDS*" And Not doseString Like "*MAX*QDS*", doseString Like "*#Q.D.S." 'had to change to catch "1-2 QDS". further work req.
+        dosage.eTiming.repeat.frequency = 4
+        dosage.eTiming.repeat.period = 1
+        dosage.eTiming.repeat.periodUnit = d
+        'Debug.Print "QDS detected"
+    'QQH, every 4 hours
+    Case doseString Like "*#QQH"
+        dosage.eTiming.repeat.frequency = 1
+        dosage.eTiming.repeat.period = 4
+        dosage.eTiming.repeat.periodUnit = h
+        
+    'MDU, ASD, As Directed
+    Case doseString Like "*MDU*", doseString Like "*ASD*", doseString Like "*AS DIRECTED*", doseString Like "AD"
+        setAdditionalInstructionAs 0, "As directed", "1116431000001100"
+    
+End Select
+
+End Sub
+
+Private Sub parseStringByDayOfWeek(doseString As String)
+'timing day of week
+Dim Criteria As Variant
+        Criteria = Array("*MONDAY*", "*TUESDAY*", "*WEDNESDAY*", "*THURSDAY*", "*FRIDAY*", "*SATURDAY*", "*SUNDAY*")
+
+    Dim i As Long
+    For i = LBound(Criteria) To UBound(Criteria)
+        'Debug.Print Criteria(i), doseString
+        If UCase(doseString) Like Criteria(i) Then
+            'Debug.Print "like private functions"
+            If Criteria(i) = "*MONDAY*" Then
+                dosage.eTiming.repeat.dayOfWeek(i) = mon
+                'Debug.Print "Monday detected", i, dosage.eTiming.repeat.dayOfWeek(i)
+            ElseIf Criteria(i) = "*TUESDAY*" Then
+                dosage.eTiming.repeat.dayOfWeek(i) = tue
+                'Debug.Print "tuesday detected", i, dosage.eTiming.repeat.dayOfWeek(i)
+            ElseIf Criteria(i) = "*WEDNESDAY*" Then
+                dosage.eTiming.repeat.dayOfWeek(i) = wed
+            ElseIf Criteria(i) = "*THURSDAY*" Then
+                dosage.eTiming.repeat.dayOfWeek(i) = thu
+            ElseIf Criteria(i) = "*FRIDAY*" Then
+                dosage.eTiming.repeat.dayOfWeek(i) = fri
+            ElseIf Criteria(i) = "*SATURDAY*" Then
+                dosage.eTiming.repeat.dayOfWeek(i) = sat
+            ElseIf Criteria(i) = "*SUNDAY*" Then
+                dosage.eTiming.repeat.dayOfWeek(i) = sun
+            End If
+        End If
+    Next i
+
+End Sub
+Private Sub parseStringForPRN(doseString As String)
+Dim partialString As String
+Dim arrPartialString() As String
+Dim varKey As Variant
+Dim arrItems As Variant
+Dim arrKeys As Variant
+Dim code As String
+Dim display As String
+Dim dict As Object
+
+'Include codes from http://snomed.info/sct  where concept is-a 046840034 (Clinical finding)
+        ' more than 1000 codes though - need api to search or somehow get array or dict.
+        'commonly - pain, nausea, vertigo, sleep, nausea and vomiting, anxiety, panic attacks, high temp, agitation,
+        'pain 22253000
+        'nausea 422587007
+        'vertigo 399153001
+        'sleep 118190003
+        'anxiety 48694002
+        'panic attack 225624000
+        'high temp 50177009 | Body temperature above reference range
+        'agitation 24199005 | Feeling agitated (finding) |
+
+
+Set dict = CreateObject("Scripting.Dictionary")
+If Not dict.Exists(key) Then
+    dict.Add "22253000", "PAIN"
+    dict.Add "422587007", "NAUSEA"
+    dict.Add "399153001", "VERTIGO"
+    dict.Add "118190003", "SLEEP"
+    dict.Add "48694002", "ANXIETY"
+    dict.Add "225624000", "PANIC ATTACK"
+    dict.Add "50177009", "HIGH TEMP"
+    dict.Add "24199005", "AGITATION"
+End If
+
+arrItems = dict.Items
+arrKeys = dict.Keys
+
+    Select Case True
+    
+    Case doseString Like "* REQUIRED FOR*", doseString Like "*PRN FOR*", doseString Like "*NEEDED FOR*"
+        partialString = Mid(doseString, InStr(doseString, "FOR") + 4, _
+        1 + Len(doseString) - InStr(doseString, "FOR") + 4)
+            If InStr(partialString, ".") > 0 Then
+                arrPartialString = Split(partialString, ".")
+                partialString = arrPartialString(0)
+            ElseIf InStr(partialString, ")") > 0 Then
+                arrPartialString = Split(partialString, ")")
+                partialString = arrPartialString(0)
+            ElseIf InStr(partialString, ",") > 0 Then
+                arrPartialString = Split(partialString, ",")
+                partialString = arrPartialString(0)
+            End If
+        'Debug.Print partialString
+        
+        'workaround until api to search or local access to SNOMED
+        setAsNeededCodeableConceptAs partialString
+        
+        'or one of common code to set
+        For varKey = 0 To UBound(arrItems)
+            If partialString Like "*" & UCase(arrItems(varKey)) & "*" Then
+                'Debug.Print "SDU found ", UCase(arrItems(varKey)), arrKeys(varKey)
+                display = arrItems(varKey)
+                code = arrKeys(varKey)
+                setAsNeededCodeableConceptAs display, code
+            End If
+        Next
+
+        
+        
+        
+        
+    Case doseString Like "* IF REQUIRED TO*"
+        partialString = Mid(doseString, InStr(doseString, "D TO") + 5, _
+        1 + Len(doseString) - InStr(doseString, "D TO") + 5)
+            If InStr(partialString, ".") > 0 Then
+                arrPartialString = Split(partialString, ".")
+                partialString = arrPartialString(0)
+            ElseIf InStr(partialString, ")") > 0 Then
+                arrPartialString = Split(partialString, ")")
+                partialString = arrPartialString(0)
+            ElseIf InStr(partialString, ",") > 0 Then
+                arrPartialString = Split(partialString, ",")
+                partialString = arrPartialString(0)
+            End If
+        'Debug.Print partialString
+                
+        'workaround until api to search or local access to SNOMED
+        setAsNeededCodeableConceptAs partialString
+        
+        'or one of common code to set
+        For varKey = 0 To UBound(arrItems)
+            If partialString Like "*" & UCase(arrItems(varKey)) & "*" Then
+                'Debug.Print "SDU found ", UCase(arrItems(varKey)), arrKeys(varKey)
+                display = arrItems(varKey)
+                code = arrKeys(varKey)
+                setAsNeededCodeableConceptAs display, code
+            End If
+        Next
+        
+    Case doseString Like "*WHEN REQUIRED", _
+        doseString Like "*AS REQUIRED*", _
+        doseString Like "*IF REQUIRED*", _
+        doseString Like "*WHEN REQUIRED*", _
+        doseString Like "*PRN*", _
+        doseString Like "*WHEN NEEDED*", _
+        doseString Like "*AS NEEDED*", _
+        doseString Like "*IF NEEDED*", _
+        doseString Like "*WHEN NECESSARY*", _
+        doseString Like "*IF NECESSARY*", _
+        doseString Like "*AS NECESSARY*"
+            dosage.asNeededBoolean = True
+    End Select
+End Sub
+
+Private Sub parseStringForRoute(doseString As String)
+Select Case True
+Case doseString Like "*TOPICAL*"
+ setRouteAs (6064005)
+Case doseString Like "*OTIC*"
+ setRouteAs (10547007)
+Case doseString Like "*INTRA-ARTICULAR*"
+ setRouteAs (12130007)
+Case doseString Like "*VAGINA*", doseString Like "* PV *"
+ setRouteAs (16857009)
+Case doseString Like "*ORAL*"
+ setRouteAs (26643006)
+Case doseString Like "*private subCUTANEOUS*", doseString Like "* SC *", doseString Like "* S/C *"
+ setRouteAs (34206005)
+Case doseString Like "*RECTUM*", doseString Like "* RECTAL*", doseString Like "* PR *"
+ setRouteAs (37161004)
+Case doseString Like "*INTRALUMINAL*"
+ setRouteAs (37737002)
+Case doseString Like "*private subLINGUAL*", doseString Like "* S/L *", doseString Like "*SUBLINGUAL*"
+ setRouteAs (37839007)
+Case doseString Like "*INTRAPERITONEAL*"
+ setRouteAs (38239002)
+Case doseString Like "*TRANSDERMAL*"
+ setRouteAs (45890007)
+Case doseString Like "*NASAL*"
+ setRouteAs (46713006)
+Case doseString Like "*INTRAVENOUS*"
+ setRouteAs (47625008)
+Case doseString Like "*BUCCAL*"
+ setRouteAs (54471007)
+Case doseString Like "*OPHTHALMIC*"
+ setRouteAs (54485002)
+Case doseString Like "*INTRA-ARTERIAL*"
+ setRouteAs (58100008)
+Case doseString Like "*INTRAMEDULLARY*"
+ setRouteAs (60213007)
+Case doseString Like "*INTRAUTERINE*"
+ setRouteAs (62226000)
+Case doseString Like "*INTRATHECAL*"
+ setRouteAs (72607000)
+Case doseString Like "*INTRAMUSCULAR*", doseString Like "* IM *", doseString Like "* I/M *"
+ setRouteAs (78421000)
+Case doseString Like "*URETHRAL*"
+ setRouteAs (90028008)
+Case doseString Like "*GASTROSTOMY*"
+ setRouteAs (127490009)
+Case doseString Like "*JEJUNOSTOMY*"
+ setRouteAs (127491008)
+Case doseString Like "*NASOGASTRIC*"
+ setRouteAs (127492001)
+Case doseString Like "*DENTAL*"
+ setRouteAs (372449004)
+Case doseString Like "*ENDOCERVICAL*"
+ setRouteAs (372450004)
+Case doseString Like "*ENDOSINUSIAL*"
+ setRouteAs (372451000)
+Case doseString Like "*ENDOTRACHEOPULMONARY*"
+ setRouteAs (372452007)
+Case doseString Like "*EXTRA-AMNIOTIC*"
+ setRouteAs (372453002)
+Case doseString Like "*GASTROENTERAL*"
+ setRouteAs (372454008)
+Case doseString Like "*GINGIVAL*"
+ setRouteAs (372457001)
+Case doseString Like "*INTRAAMNIOTIC*"
+ setRouteAs (372458006)
+Case doseString Like "*INTRABURSAL*"
+ setRouteAs (372459003)
+Case doseString Like "*INTRACARDIAC*"
+ setRouteAs (372460008)
+Case doseString Like "*INTRACAVERNOUS*"
+ setRouteAs (372461007)
+Case doseString Like "*INTRACORONARY*"
+ setRouteAs (372463005)
+Case doseString Like "*INTRADERMAL*"
+ setRouteAs (372464004)
+Case doseString Like "*INTRADISCAL*"
+ setRouteAs (372465003)
+Case doseString Like "*INTRALESIONAL*"
+ setRouteAs (372466002)
+Case doseString Like "*INTRALYMPHATIC*"
+ setRouteAs (372467006)
+Case doseString Like "*INTRAOCULAR*"
+ setRouteAs (372468001)
+Case doseString Like "*INTRAPLEURAL*"
+ setRouteAs (372469009)
+Case doseString Like "*INTRASTERNAL*"
+ setRouteAs (372470005)
+Case doseString Like "*INTRAVESICAL*"
+ setRouteAs (372471009)
+Case doseString Like "*OROMUCOSAL*"
+ setRouteAs (372473007)
+Case doseString Like "*PERIARTICULAR*"
+ setRouteAs (372474001)
+Case doseString Like "*PERINEURAL*"
+ setRouteAs (372475000)
+Case doseString Like "*private subCONJUNCTIVAL*"
+ setRouteAs (372476004)
+Case doseString Like "*TRANSMUCOSAL*"
+ setRouteAs (404815008)
+Case doseString Like "*INTRATRACHEAL*"
+ setRouteAs (404818005)
+Case doseString Like "*INTRABILIARY*"
+ setRouteAs (404819002)
+Case doseString Like "*EPIDURAL*"
+ setRouteAs (404820008)
+Case doseString Like "*private subORBITAL*"
+ setRouteAs (416174007)
+Case doseString Like "*CAUDAL*"
+ setRouteAs (417070009)
+Case doseString Like "*INTRAOSSEOUS*"
+ setRouteAs (417255000)
+Case doseString Like "*INTRATHORACIC*"
+ setRouteAs (417950001)
+Case doseString Like "*ENTERAL*"
+ setRouteAs (417985001)
+Case doseString Like "*INTRADUCTAL*"
+ setRouteAs (417989007)
+Case doseString Like "*INTRATYMPANIC*"
+ setRouteAs (418091004)
+Case doseString Like "*INTRAVENOUS CENTRAL*"
+ setRouteAs (418114005)
+Case doseString Like "*INTRAMYOMETRIAL*"
+ setRouteAs (418133000)
+Case doseString Like "*GASTRO-INTESTINAL STOMA*"
+ setRouteAs (418136008)
+Case doseString Like "*COLOSTOMY*"
+ setRouteAs (418162004)
+Case doseString Like "*PERIURETHRAL*"
+ setRouteAs (418204005)
+Case doseString Like "*INTRACORONAL*"
+ setRouteAs (418287000)
+Case doseString Like "*RETROBULBAR*"
+ setRouteAs (418321004)
+Case doseString Like "*INTRACARTILAGINOUS*"
+ setRouteAs (418331006)
+Case doseString Like "*INTRAVITREAL*"
+ setRouteAs (418401004)
+Case doseString Like "*INTRASPINAL*"
+ setRouteAs (418418000)
+Case doseString Like "*OROGASTRIC*"
+ setRouteAs (418441008)
+Case doseString Like "*TRANSURETHRAL*"
+ setRouteAs (418511008)
+Case doseString Like "*INTRATENDINOUS*"
+ setRouteAs (418586008)
+Case doseString Like "*INTRACORNEAL*"
+ setRouteAs (418608002)
+Case doseString Like "*OROPHARYNGEAL*"
+ setRouteAs (418664002)
+Case doseString Like "*PERIBULBAR*"
+ setRouteAs (418722009)
+Case doseString Like "*NASOJEJUNAL*"
+ setRouteAs (418730005)
+Case doseString Like "*FISTULA*"
+ setRouteAs (418743005)
+Case doseString Like "*SURGICAL DRAIN*"
+ setRouteAs (418813001)
+Case doseString Like "*INTRACAMERAL*"
+ setRouteAs (418821007)
+Case doseString Like "*PARACERVICAL*"
+ setRouteAs (418851001)
+Case doseString Like "*INTRASYNOVIAL*"
+ setRouteAs (418877009)
+Case doseString Like "*INTRADUODENAL*"
+ setRouteAs (418887008)
+Case doseString Like "*INTRACISTERNAL*"
+ setRouteAs (418892005)
+Case doseString Like "*INTRATESTICULAR*"
+ setRouteAs (418947002)
+Case doseString Like "*INTRACRANIAL*"
+ setRouteAs (418987007)
+Case doseString Like "*TUMOR CAVITY*"
+ setRouteAs (419021003)
+Case doseString Like "*PARAVERTEBRAL*"
+ setRouteAs (419165009)
+Case doseString Like "*INTRASINAL*"
+ setRouteAs (419231003)
+Case doseString Like "*TRANSCERVICAL*"
+ setRouteAs (419243002)
+Case doseString Like "*private subTENDINOUS*"
+ setRouteAs (419320008)
+Case doseString Like "*INTRAABDOMINAL*"
+ setRouteAs (419396008)
+Case doseString Like "*private subGINGIVAL*"
+ setRouteAs (419601003)
+Case doseString Like "*INTRAOVARIAN*"
+ setRouteAs (419631009)
+Case doseString Like "*URETERAL*"
+ setRouteAs (4196840080#)
+Case doseString Like "*PERITENDINOUS*"
+ setRouteAs (4197620030#)
+Case doseString Like "*INTRABRONCHIAL*"
+ setRouteAs (419778001)
+Case doseString Like "*INTRAPROSTATIC*"
+ setRouteAs (419810008)
+Case doseString Like "*private subMUCOSAL*"
+ setRouteAs (419874009)
+Case doseString Like "*SURGICAL CAVITY*"
+ setRouteAs (419894000)
+Case doseString Like "*ILEOSTOMY*"
+ setRouteAs (419954003)
+Case doseString Like "*INTRAVENOUS PERIPHERAL*"
+ setRouteAs (419993007)
+Case doseString Like "*PERIOSTEAL*"
+ setRouteAs (420047004)
+Case doseString Like "*ESOPHAGOSTOMY*"
+ setRouteAs (420163009)
+Case doseString Like "*UROSTOMY*"
+ setRouteAs (420168000)
+Case doseString Like "*LARYNGEAL*"
+ setRouteAs (420185003)
+Case doseString Like "*INTRAPULMONARY*"
+ setRouteAs (420201002)
+Case doseString Like "*MUCOUS FISTULA*"
+ setRouteAs (420204005)
+Case doseString Like "*NASODUODENAL*"
+ setRouteAs (420218003)
+Case doseString Like "*BODY CAVITY*"
+ setRouteAs (420254004)
+Case doseString Like "*INTRAVENTRICULAR - CARDIAC*"
+ setRouteAs (420287000)
+Case doseString Like "*INTRACEREBROVENTRICULAR*"
+ setRouteAs (420719007)
+Case doseString Like "*PERCUTANEOUS*"
+ setRouteAs (428191002)
+Case doseString Like "*INTERSTITIAL*"
+ setRouteAs (429817007)
+Case doseString Like "*INTRAESOPHAGEAL*"
+ setRouteAs (445752009)
+Case doseString Like "*INTRAGINGIVAL*"
+ setRouteAs (445754005)
+Case doseString Like "*INTRAVASCULAR*"
+ setRouteAs (445755006)
+Case doseString Like "*INTRADURAL*"
+ setRouteAs (4457560070#)
+Case doseString Like "*INTRAMENINGEAL*"
+ setRouteAs (445767008)
+Case doseString Like "*INTRAGASTRIC*"
+ setRouteAs (445768003)
+Case doseString Like "*INTRACORPUS CAVERNOSUM*"
+ setRouteAs (445769006)
+Case doseString Like "*INTRAPERICARDIAL*"
+ setRouteAs (4457710060#)
+Case doseString Like "*INTRALINGUAL*"
+ setRouteAs (445913005)
+Case doseString Like "*INTRAHEPATIC*"
+ setRouteAs (445941009)
+Case doseString Like "*CONJUNCTIVAL*"
+ setRouteAs (446105004)
+Case doseString Like "*INTRAEPICARDIAL*"
+ setRouteAs (4464070040#)
+Case doseString Like "*TRANSENDOCARDIAL*"
+ setRouteAs (446435000)
+Case doseString Like "*TRANSPLACENTAL*"
+ setRouteAs (446442000)
+Case doseString Like "*INTRACEREBRAL*"
+ setRouteAs (446540005)
+Case doseString Like "*INTRAILEAL*"
+ setRouteAs (447026006)
+Case doseString Like "*PERIODONTAL*"
+ setRouteAs (447052000)
+Case doseString Like "*PERIDURAL*"
+ setRouteAs (447080003)
+Case doseString Like "*LOWER RESPIRATORY TRACT*"
+ setRouteAs (447081004)
+Case doseString Like "*INTRAMAMMARY*"
+ setRouteAs (447121004)
+Case doseString Like "*INTRATUMOR*"
+ setRouteAs (447122006)
+Case doseString Like "*TRANSTYMPANIC*"
+ setRouteAs (447227007)
+Case doseString Like "*TRANSTRACHEAL*"
+ setRouteAs (447229005)
+Case doseString Like "*RESPIRATORY TRACT*" ', doseString Like "*INHALE*"
+ setRouteAs (447694001)
+Case doseString Like "*DIGESTIVE TRACT*"
+ setRouteAs (447964005)
+Case doseString Like "*INTRAEPIDERMAL*"
+ setRouteAs (448077001)
+Case doseString Like "*INTRAJEJUNAL*"
+ setRouteAs (448491004)
+Case doseString Like "*INTRACOLONIC*"
+ setRouteAs (448492006)
+Case doseString Like "*CUTANEOUS*"
+ setRouteAs (448598008)
+Case doseString Like "*ARTERIOVENOUS FISTULA*"
+ setRouteAs (697971008)
+Case doseString Like "*INTRANEURAL*"
+ setRouteAs (711360002)
+Case doseString Like "*INTRAMURAL*"
+ setRouteAs (711378007)
+Case doseString Like "*EXTRACORPOREAL*"
+ setRouteAs (714743009)
+Case doseString Like "*INFILTRATION*"
+ setRouteAs (718329006)
+Case doseString Like "*private subLESIONAL*"
+ setRouteAs (1611000175109#)
+End Select
+
+'Debug.Print "route detected: " & dosage.route.code
+
+End Sub
+
+Sub parseStringForTimeOfDay(doseString As String)
+' parse for time of day
+' at 1:00 PM
+' 7AM
+' 1200, 1800
+'regex \d{4}|\d\d?[AP]M|\d{2}\:\d{2}
+'https://learn.microsoft.com/en-us/dotnet/visual-basic/language-reference/data-types/date-data-type
+'You can specify the time value in either 12-hour or 24-hour format, for example #1:15:30 PM# or #13:15:30#. However, if you do not specify either the minutes or the seconds, you must specify AM or PM.
+
+Dim listOfTimes As String
+Dim arrayOfTimes() As String
+Dim i As Long
+
+listOfTimes = RegexExtract(doseString, "\d{4}|\d\d?[AP]M|\d{2}[\:\.]\d{2}", ", ")
+
+arrayOfTimes = Split(listOfTimes, ", ")
+
+For i = LBound(arrayOfTimes) To UBound(arrayOfTimes)
+    If arrayOfTimes(i) Like "####" Then
+        arrayOfTimes(i) = Left(arrayOfTimes(i), 2) & ":" & Right(arrayOfTimes(i), 2) & ":00"
+    End If
+    arrayOfTimes(i) = TimeValue(arrayOfTimes(i))
+    dosage.eTiming.repeat.timeOfDay(i) = arrayOfTimes(i)
+    'Debug.Print dosage.eTiming.repeat.timeOfDay(i)
+Next i
+
+
+'Debug.Print listOfTimes, arrayOfTimes(0)
+End Sub
+
+Sub parseStringForReason(doseString As String) 'not strictly FIHR3. Sub to assign indication if given to patientInstruction
+Dim noOtherReasonToUseFOR As Boolean
+Dim partialString As String
+
+
+If Len(dosage.asNeededCodeableConcept.display) = 0 And dosage.eTiming.repeat.boundsDuration.value = 0 And dosage.eTiming.repeat.boundsRange.high.value = 0 Then
+    noOtherReasonToUseFOR = True
+End If
+
+'Debug.Print Len(dosage.asNeededCodeableConcept.display), Len(dosage.eTiming.repeat.boundsDuration.value), dosage.eTiming.repeat.boundsDuration.value, Len(dosage.eTiming.repeat.boundsRange.high.value), dosage.eTiming.repeat.boundsRange.high.value
+
+'as per... ?
+
+If doseString Like "* FOR *" And noOtherReasonToUseFOR = True Then
+    partialString = RegexExtract(doseString, "FOR.*")
+    'Debug.Print partialString
+End If
+
+If Len(dosage.patientInstruction) = 0 And Not partialString Like "*)*" Then
+    dosage.patientInstruction = partialString
+End If
+
+End Sub
+'<-------------------------- Parsing Helper functions----------------------------------->
+
+Private Function RegexExtract(ByVal text As String, _
+                      ByVal extract_what As String, _
+                      Optional seperator As String = "") As String
+
+Dim i As Long, j As Long
+Dim result As String
+Dim allMatches As Object
+Dim RE As Object
+Set RE = CreateObject("vbscript.regexp")
+
+RE.Pattern = extract_what
+RE.Global = True
+Set allMatches = RE.Execute(text)
+
+For i = 0 To allMatches.count - 1
+    'For j = 0 To allMatches.Item(i).submatches.count - 1
+        result = result & seperator & allMatches.Item(i) '.submatches.Item(j)
+    'Next
+Next
+
+If Len(result) <> 0 Then
+    result = Right(result, Len(result) - Len(seperator))
+End If
+
+RegexExtract = result
+
+End Function
+
+Private Function RegexExtractSubmatch(ByVal text As String, ByVal extract_what As String, Optional seperator As String = "") As String
+
+Dim i As Long, j As Long
+Dim result As String
+Dim allMatches As Object
+Dim RE As Object
+Set RE = CreateObject("vbscript.regexp")
+
+RE.Pattern = extract_what
+RE.Global = True
+Set allMatches = RE.Execute(text)
+
+For i = 0 To allMatches.count - 1
+    For j = 0 To allMatches.Item(i).SubMatches.count - 1
+        result = result & seperator & allMatches.Item(i).SubMatches.Item(j)
+    Next j
+Next i
+
+If Len(result) <> 0 Then
+    result = Right(result, Len(result) - Len(seperator))
+End If
+
+RegexExtractSubmatch = result
+
+End Function
+
+
+Private Function regexReplace(strInput As String, strPattern As String, strReplace As String) As String
+
+    Dim strOutput As String
+    
+    Static regEx As Object
+    
+    If regEx Is Nothing Then Set regEx = CreateObject("VBScript.RegExp")
+        
+    If strPattern <> "" Then
+
+        With regEx
+            .Global = True
+            .MultiLine = True
+            .IgnoreCase = False
+            .Pattern = strPattern
+        End With
+        
+        If regEx.Test(strInput) Then
+            regexReplace = regEx.Replace(strInput, strReplace)
+        Else
+            regexReplace = strInput
+        End If
+    End If
+End Function
+
+Private Function replaceWrittenNumberWithDigit(strInput As String) As String
+
+'Function convertWrittenNumberToDigit(strInput As String) As String 'As Double
+
+Static regEx As Object
+Static patterns As Object
+Dim matches As Object
+Dim match As Object
+Dim i As Integer
+Dim subMatch As String
+Dim subMatchesArray() As String
+Dim arrayIndex As Integer
+Dim firstpart As Double
+Dim secondpart As Double
+Dim thirdpart As Double
+Dim Pattern As String
+
+If regEx Is Nothing Then Set regEx = CreateObject("VBScript.RegExp")
+      
+Pattern = "(?:(?:(?:((?:ONE|TWO|THREE|FOUR|FIVE|SIX|SEVEN|EIGHT|NINE))\s?HUNDRED)(?:\s?AND\s?|\s?)?)?(?:(?:(?:(TWENTY|THIRTY|FORTY|FIFTY|SIXTY|SEVENTY|EIGHTY|NINETY))(?:\s?\-\s?|\s?)?(?:(ONE|TWO|THREE|FOUR|FIVE|SIX|SEVEN|EIGHT|NINE))??)|(?:(TEN|ELEVEN|TWELVE|THIRTEEN|FOURTEEN|FIFTEEN|SIXTEEN|SEVENTEEN|EIGHTEEN|NINETEEN)?)|(?:(ONE|TWO|THREE|FOUR|FIVE|SIX|SEVEN|EIGHT|NINE)?))\s?THOUSAND(?:\s?AND\s?|\s?)?)?(?:(?:((?:ONE|TWO|THREE|FOUR|FIVE|SIX|SEVEN|EIGHT|NINE))\s?HUNDRED)(?:\s?AND\s?|\s?)?)?(?:(?:(?:(TWENTY|THIRTY|FORTY|FIFTY|SIXTY|SEVENTY|EIGHTY|NINETY))(?:\s?-\s?|\s?)?(?:(ONE|TWO|THREE|FOUR|FIVE|SIX|SEVEN|EIGHT|NINE))?)|(?:(TEN|ELEVEN|TWELVE|THIRTEEN|FOURTEEN|FIFTEEN|SIXTEEN|SEVENTEEN|EIGHTEEN|NINETEEN))|(?:(ONE|TWO|THREE|FOUR|FIVE|SIX|SEVEN|EIGHT|NINE)))\b"
+
+With regEx
+    .Global = True
+    .MultiLine = True
+    .IgnoreCase = True
+    .Pattern = Pattern
+End With
+        
+arrayIndex = 0
+        
+If regEx.Test(strInput) Then
+    Set matches = regEx.Execute(strInput)
+    If matches.count > 0 Then
+        Set match = matches(0) ' Single match expected
+        For i = 0 To match.SubMatches.count - 1
+            subMatch = match.SubMatches(i)
+            
+            ' Resize the array and add the submatch
+            ReDim Preserve subMatchesArray(arrayIndex)
+            subMatchesArray(arrayIndex) = subMatch
+            arrayIndex = arrayIndex + 1
+        Next i
+    Else
+        Debug.Print "No matches found."
+    End If
+  
+
+
+'refactor. if regex test fails need to return original string. below needs to go in the test loop.
+
+    For j = LBound(subMatchesArray) To UBound(subMatchesArray)
+        Select Case UCase(subMatchesArray(j))
+            Case ""
+                subMatchesArray(j) = "0"
+            Case "ONE"
+                subMatchesArray(j) = "1"
+            Case "TWO"
+                subMatchesArray(j) = "2"
+            Case "THREE"
+                subMatchesArray(j) = "3"
+            Case "FOUR"
+                subMatchesArray(j) = "4"
+            Case "FIVE"
+                subMatchesArray(j) = "5"
+            Case "SIX"
+                subMatchesArray(j) = "6"
+            Case "SEVEN"
+                subMatchesArray(j) = "7"
+            Case "EIGHT"
+                subMatchesArray(j) = "8"
+            Case "NINE"
+                subMatchesArray(j) = "9"
+            Case "TEN"
+                subMatchesArray(j) = "10"
+            Case "ELEVEN"
+                subMatchesArray(j) = "11"
+            Case "TWELVE"
+                subMatchesArray(j) = "12"
+            Case "THIRTEEN"
+                subMatchesArray(j) = "13"
+            Case "FOURTEEN"
+                subMatchesArray(j) = "14"
+            Case "FIFTEEN"
+                subMatchesArray(j) = "15"
+            Case "SIXTEEN"
+                subMatchesArray(j) = "16"
+            Case "SEVENTEEN"
+                subMatchesArray(j) = "17"
+            Case "EIGHTEEN"
+                subMatchesArray(j) = "18"
+            Case "NINETEEN"
+                subMatchesArray(j) = "19"
+            Case "TWENTY"
+                subMatchesArray(j) = "20"
+            Case "THIRTY"
+                subMatchesArray(j) = "30"
+            Case "FORTY"
+                subMatchesArray(j) = "40"
+            Case "FIFTY"
+                subMatchesArray(j) = "50"
+            Case "SIXTY"
+                subMatchesArray(j) = "60"
+            Case "SEVENTY"
+                subMatchesArray(j) = "70"
+            Case "EIGHTY"
+                subMatchesArray(j) = "80"
+            Case "NINETY"
+                subMatchesArray(j) = "90"
+                
+        End Select
+                
+    Next j
+    
+    firstpart = (CDbl(subMatchesArray(0)) * 100) + CDbl(subMatchesArray(1)) + CDbl(subMatchesArray(2)) + CDbl(subMatchesArray(3)) + CDbl(subMatchesArray(4))
+    secondpart = (CDbl(subMatchesArray(5)) * 100) + CDbl(subMatchesArray(6)) + CDbl(subMatchesArray(7)) + CDbl(subMatchesArray(8)) + CDbl(subMatchesArray(9))
+    thirdpart = CStr((firstpart * 1000) + secondpart)
+    
+    replaceWrittenNumberWithDigit = regEx.Replace(strInput, thirdpart)
+    'Debug.Print replaceWrittenNumberWithDigit
+Else
+    replaceWrittenNumberWithDigit = strInput
+
+End If
+
+Set regEx = Nothing
+Set patterns = Nothing
+
+End Function
+
+                       
