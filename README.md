@@ -6,121 +6,165 @@ Disclaimer. These functions should be used with professional discretion. They ha
 
 Please feel free to fork and improve the code.
 
-Add-on instructions.
+## Add-on instructions.
 Download the add-in file and place in a local folder.
 
 If Developer tab is not available in the ribbon then:
+
 File/options/tick developer under Main Tabs and OK.
+
 then
+
 Excel Add-ins/browse/select add-in file. 
+
 Restart.
 
 
-There are some simple user-defined functions in the module, and some classes.
+## There are some simple user-defined functions in the module, and some classes.
 
-cockroftAndGault(age As Range, gender As Range, weightInKg As Range, sCrumolL As Range) As Double
+**cockroftAndGault**(age As Range, gender As Range, weightInKg As Range, sCrumolL As Range) As Double
+
 derived https://bnf.nice.org.uk/medicines-guidance/prescribing-in-renal-impairment/
 Calculates Creatinine Clearance in mL/min using the eponymous formula.
 
 
-eGFR2009CKDEPI(age As Range, sex As Range, sCrumolL As Range) As Double
+**eGFR2009CKDEPI**(age As Range, sex As Range, sCrumolL As Range) As Double
+
 derived https://bnf.nice.org.uk/medicines-guidance/prescribing-in-renal-impairment/
 Calculates eGFR using the eponymous formula.
 
 
-bodyMassIndex(weightInKg As Range, heightInMetres As Range)
+**bodyMassIndex**(weightInKg As Range, heightInMetres As Range)
+
 Throws an error if person less than, arbitrarily, a metre high
 
 
-idealWeightInKg(gender As Range, heightInM As Range) As Double
+**idealWeightInKg**(gender As Range, heightInM As Range) As Double
 
 
-removeUnits(rngValueWithUnits As Range)
+**removeUnits**(rngValueWithUnits As Range)
+
 Removes the units and returns a number. e.g. 75kg returns 75.
 
 
-AECScore(formDescCells As Range) As Integer
+**AECScore**(formDescCells As Range) As Integer
+
 https://kclpure.kcl.ac.uk/portal/files/94138490/Anticholinergic_effect_on_cognition_Publishedonline9June2016_GREEN_AAM.pdf
 Calculates the Anticholinergic Effect on Cognition (AEC) score based on the formulation descriptions in the input cells. If more than one cell is selected the score is added. Beware double counting multiple strengths of the same preparation.
 
     
-addACBScore(formDescCells1 As Range) As Integer
-'list from https://www.acbcalc.com/medicines
-'augmented with brand synonyms from BNF.
-'note - no score for dosulepin, lofepramine, prochlorperazine, promazine, amiodarone, sertindole
-'note - different scores for levomepromazine and methotrimeprazine
+**addACBScore**(formDescCells1 As Range) As Integer
+
+List from https://www.acbcalc.com/medicines
+
+Augmented with brand synonyms from BNF.
+
+note - no score for dosulepin, lofepramine, prochlorperazine, promazine, amiodarone, sertindole
+
+note - different scores for levomepromazine and methotrimeprazine
+
 Calculates the Anticholinergic Burden (ACB) score based on the formulation descriptions in the input cells. If more than one cell is selected the score is added. Beware double counting multiple strengths of the same preparation.
 
-Sub reindexHorizontalData(indexColNum As Long, dataColNum As Long, dataRepeats As Long, worksheetName As String)
+Sub **reindexHorizontalData**(indexColNum As Long, dataColNum As Long, dataRepeats As Long, worksheetName As String)
 
 
-Sub reindexHorizontalDataPrompted()
+Sub **reindexHorizontalDataPrompted**()
+
 Macro to call the reindexHorizontalData Sub.
+
 The reindexHorizontalData Sub can be called from within other routines but this sub allows it to be called directly from the macro list and prompts the user for the inputs for the active sheet.
 
 indexColNum is how many columns are to be contained in the index.
+
 dataColNum is how many columns are contained for each data item.
+
 dataRepeats is how many times the data repeats.
 
 Manipulating data this way can be necessary to create a lookup when the clinical system outputs horizontally. e.g. SystmOne's configured, or adhoc output.
 
 example:
-+-----------------+---------------+--------------+--------------+---------------+-------+--+--+--+--+
-| indexColNum = 1 | indexColNum=2 | dataColNum=1 | dataColNum=2 | dataRepeats=2 |       |  |  |  |  |
-+-----------------+---------------+--------------+--------------+---------------+-------+--+--+--+--+
-| NHS Number      | Name          | Drug1        | Dose1        | Drug2         | Dose2 |  |  |  |  |
-| 1               | Foo Bar       | A            | B            | C             | D     |  |  |  |  |
-| 2               | Bar Foo       | E            | F            | G             | H     |  |  |  |  |
-+-----------------+---------------+--------------+--------------+---------------+-------+--+--+--+--+
+
+| NHS Number      | Name            | Drug1          | Dose1          | Drug2           | Dose2 |   |   |   |   |
+|-----------------|-----------------|----------------|----------------|-----------------|-------|---|---|---|---|
+| 1               | Foo Bar         | A              | B              | C               | D     |   |   |   |   |
+| 2               | Bar Foo         | E              | F              | G               | H     |   |   |   |   |
+|                 |                 |                |                |                 |       |   |   |   |   |
+|                 |                 |                |                |                 |       |   |   |   |   |
+|                 |                 |                |                |                 |       |   |   |   |   |
+|                 |                 |                |                |                 |       |   |   |   |   |
+| (indexColNum 1) | (indexColNum 2) | (dataColNum 1) | (dataColNum 2) | (datarepeats 2) |       |   |   |   |   |
+|                 |                 |                |                |                 |       |   |   |   |   |
 
 Becomes:
 
-+------------+---------+-------+-------+-------+-------+--+--+--+--+
-| NHS Number | Name    | Drug1 | Dose1 | Drug2 | Dose2 |  |  |  |  |
-+------------+---------+-------+-------+-------+-------+--+--+--+--+
-| 1          | Foo Bar | A     | B     |       |       |  |  |  |  |
-| 2          | Bar Foo | E     | F     |       |       |  |  |  |  |
-| 1          | Foo Bar | C     | D     |       |       |  |  |  |  |
-| 2          | Bar Foo | G     | H     |       |       |  |  |  |  |
-+------------+---------+-------+-------+-------+-------+--+--+--+--+
+| NHS Number | Name    | Drug1 | Dose1 | Drug2 | Dose2 |   |   |   |   |
+|------------|---------|-------|-------|-------|-------|---|---|---|---|
+| 1          | Foo Bar | A     | B     |       |       |   |   |   |   |
+| 2          | Bar Foo | E     | F     |       |       |   |   |   |   |
+| 1          | Foo Bar | C     | D     |       |       |   |   |   |   |
+| 2          | Bar Foo | G     | H     |       |       |   |   |   |   |
+|            |         |       |       |       |       |   |   |   |   |
+|            |         |       |       |       |       |   |   |   |   |
+|            |         |       |       |       |       |   |   |   |   |
+|            |         |       |       |       |       |   |   |   |   |
 
 
-FIHRDosage(doseInstruction As Range)
+**FIHRDosage**(doseInstruction As Range)
+
 Uses clsDosage to return a FIHR STU3 compatible JSON.
 
 
-scriptDurationInDays(doseInstruction As Range, scriptQuantity As Range)
+**scriptDurationInDays**(doseInstruction As Range, scriptQuantity As Range)
+
 Uses clsDoseProcessor method to return how many days the prescription ought to last given the dose instructions and the quantity supplied. It could be anticipated this could be useful in the analysis of antibiotic prescribing.
+
 Doses with a Sequence property value > 1 will not be calculated correctly.
+
 Doses with a repeatPeriod in hours may not be calculated correctly.
 
-morphineEquivalentFrom(doseInstruction As Range, formDescRng As Range)
+**morphineEquivalentFrom**(doseInstruction As Range, formDescRng As Range)
+
 Uses clsDoseProcessor method to return the daily morphine dose equivalent in milligrams given the formulation's description and the dose instructions.
+
 Doses with a Sequence property value > 2 will not be calculated correctly.
 
-clsDosage
+**clsDosage**
+
 Aims to convert a dose-instruction string to a FIHR STU3 compatible JSON
+
 https://hl7.org/fhir/STU3/dosage.html
+
 This interprets/parses the dose instruction string and returns the concepts as structured data. The Route, Site, and asNeededCodeableConcept properties are not fully implemented because they contain over 1000 possible snomed codes. It may need an API call in order to implement properly.
 
-Class Method(s):
+<ins> Class Method(s): </ins>
+
 FIHR3JSONConvertedFrom(doseString As String) As String
 
 
-clsDoseProcessor
+**clsDoseProcessor**
+
 A suite to    -work out a prescription duration, given dose and quantity.
               -work out the morphine dose equivalent per day, given the dose and product description of an opioid. Methadone is not supported and will result in an error.
-Class Method(s):
+
+<ins> Class Method(s): </ins>
+
 scriptDurationIs(doseStr As String, scriptQuant As Double) As Double
+
 morphineDoseEquivalentOf(doseStr As String, formDesc As String)
 
 
-clsParseJSON
+**clsParseJSON**
+
 A class created from code by Daniel Ferry to parse JSON in VBA.
+
 https://medium.com/swlh/excel-vba-parse-json-easily-c2213f4d8e7a
 
-Class Method(s):
+<ins> Class Method(s): </ins>
+
 Public Function ParseJSON(json As String, Optional key As String = "obj") As Object
+
 Public Sub ListPaths()
+
 Public Function GetFilteredValues(match As String) As Variant
+
 Public Function GetFilteredTable(cols As Variant) As Variant
