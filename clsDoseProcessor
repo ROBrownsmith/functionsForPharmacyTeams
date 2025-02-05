@@ -19,11 +19,11 @@ Dim doseDic As Object
 
 Set parser = New clsParseJSON
 Set converter = New clsDosage
-doseJSON = converter.convertDoseStringToFIHR3JSON(doseStr)
+doseJSON = converter.FHIR3JSONConvertedFrom(doseStr)
 'Debug.Print doseJSON
 Set doseDic = parser.ParseJSON(doseJSON)
 
-parser.ListPaths
+'parser.ListPaths
 
 Select Case True
     Case doseDic("obj.dosageInstruction(0).timing.repeat.when(0)") = "IMD" And _
