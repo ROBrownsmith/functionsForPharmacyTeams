@@ -1,7 +1,7 @@
 'class module: Dosage
 
 ' By Robert.Brownsmith@nhs.net
-' Converts a dose string to a FIHR STU3 compatible JSON
+' Converts a dose string to a FHIR STU3 compatible JSON
 
 'declare user defined data types - FHIR release 3. https://hl7.org/fhir/STU3/dosage.html
 
@@ -1266,8 +1266,8 @@ End Function
 
 '<--------------------------- parser functions -------------------------------------->
 
-Public Function FIHR3JSONConvertedFrom(doseString As String) As String
-    FIHR3JSONConvertedFrom = createArrayFromSequentialDose(doseString)
+Public Function FHIR3JSONConvertedFrom(doseString As String) As String
+    FHIR3JSONConvertedFrom = createArrayFromSequentialDose(doseString)
 End Function
 
 Private Function createArrayFromSequentialDose(doseString As String)
