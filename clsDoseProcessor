@@ -1,0 +1,436 @@
+'class Dose Processor
+'by Robert.Brownsmith@nhs.net
+'A suite of functions to    -work out a prescription duration, given dose and quantity.
+'                           -work out the morphine dose equivalent per day, given the dose and product description.
+
+Private Type strengthPerUnit
+    numeratorValue As Double
+    numeratorUnit As String
+    denominatorValue As Double
+    denominatorUnit As String
+End Type
+
+
+Public Function scriptDurationIs(doseStr As String, scriptQuant As Double) As Double
+Dim parser As clsParseJSON
+Dim converter As clsDosage
+Dim doseJSON As String
+Dim doseDic As Object
+
+Set parser = New clsParseJSON
+Set converter = New clsDosage
+doseJSON = converter.convertDoseStringToFIHR3JSON(doseStr)
+'Debug.Print doseJSON
+Set doseDic = parser.ParseJSON(doseJSON)
+
+parser.ListPaths
+
+Select Case True
+    Case doseDic("obj.dosageInstruction(0).timing.repeat.when(0)") = "IMD" And _
+        doseDic("obj.dosageInstruction(1).doseQuantity.value") > 0 'iterate for sequence >1 ?
+            scriptDurationIs = 1 + ((scriptQuant - (CDbl(doseDic("obj.dosageInstruction(0).doseQuantity.value"))) / _
+                (CDbl(doseDic("obj.dosageInstruction(1).doseQuantity.value")) * _
+                CDbl(doseDic("obj.dosageInstruction(1).timing.repeat.frequency")))))
+    Case doseDic("obj.dosageInstruction(0).doseQuantity.value") > 0 And _
+        doseDic("obj.dosageInstruction(0).timing.repeat.frequency") = ""
+            scriptDurationIs = 1
+    Case doseDic("obj.dosageInstruction(0).doseQuantity.unit") = "5 millilitre medicine spoonful"
+        scriptDurationIs = scriptQuant / (5 * (CDbl(doseDic("obj.dosageInstruction(0).doseQuantity.value"))) * _
+            CDbl(doseDic("obj.dosageInstruction(0).timing.repeat.frequency")))
+    Case Else ' fix this or more cases if timing repeatperiod is 12 and periodunit is h...
+        scriptDurationIs = scriptQuant / (CDbl(doseDic("obj.dosageInstruction(0).doseQuantity.value")) * _
+            CDbl(doseDic("obj.dosageInstruction(0).timing.repeat.frequency")))
+End Select
+
+End Function
+
+Public Function morphineDoseEquivalentOf(doseStr As String, formDesc As String) 'As Double
+Dim parser As clsParseJSON
+Dim converter As clsDosage
+Dim doseJSON As String
+Dim doseDic As Object
+Dim formStrength As strengthPerUnit
+Dim freqConversion As Double
+Dim timesPerDay As Double
+Dim timesPerDay1 As Double
+Dim mgPerDay As Double
+Dim mgPerDay1 As Double
+Dim conversionFactor As Double
+
+Set parser = New clsParseJSON
+Set converter = New clsDosage
+
+formStrength = extractedStrength(formDesc)
+conversionFactor = mdeConversionFactorOf(formDesc)
+doseJSON = converter.FIHR3JSONConvertedFrom(doseStr)
+Set doseDic = parser.ParseJSON(doseJSON)
+
+'comment in as needed for debug
+'parser.ListPaths
+
+'convert micrograms to milligrams
+If formStrength.numeratorUnit Like "microgram*" Then
+    formStrength.numeratorValue = formStrength.numeratorValue / 1000
+    formStrength.numeratorUnit = "milligram"
+End If
+
+'times per day
+Select Case True
+    Case doseDic("obj.dosageInstruction(0).timing.repeat.periodUnit") = "h"
+        timesPerDay = 24 / doseDic("obj.dosageInstruction(0).timing.repeat.period")
+    Case doseDic("obj.dosageInstruction(0).timing.repeat.periodUnit") = "d"
+        If doseDic("obj.dosageInstruction(0).timing.repeat.frequencyMax") > 0 Then
+            timesPerDay = doseDic("obj.dosageInstruction(0).timing.repeat.frequencyMax") / _
+                doseDic("obj.dosageInstruction(0).timing.repeat.period")
+        Else
+            timesPerDay = doseDic("obj.dosageInstruction(0).timing.repeat.frequency") / _
+                doseDic("obj.dosageInstruction(0).timing.repeat.period")
+        End If
+    Case doseDic("obj.dosageInstruction(0).timing.repeat.periodUnit") = "wk"
+        timesPerDay = 1
+    Case Len(doseDic("obj.dosageInstruction(0).timing.repeat.when(0)")) > 0
+        timesPerDay = 1
+    Case Len(doseDic("obj.dosageInstruction(0).timing.repeat.when(1)")) > 0
+        timesPerDay = 2
+    Case Len(doseDic("obj.dosageInstruction(0).timing.repeat.when(2)")) > 0
+        timesPerDay = 3
+    Case Len(doseDic("obj.dosageInstruction(0).timing.repeat.when(3)")) > 0
+        timesPerDay = 4
+    Case Len(doseDic("obj.dosageInstruction(0).timing.repeat.when(4)")) > 0
+        timesPerDay = 5
+    Case Len(doseDic("obj.dosageInstruction(0).timing.repeat.when(5)")) > 0 'when(27) is possible but unlikely.
+        timesPerDay = 6
+End Select
+
+
+
+'dose by weight or dose unit
+Select Case True
+    
+    Case doseDic("obj.dosageInstruction(0).doseQuantity.unit") = "Unit dose", _
+        doseDic("obj.dosageInstruction(0).doseQuantity.unit") = "Capsule", _
+        doseDic("obj.dosageInstruction(0).doseQuantity.unit") = "Tablet"
+            mgPerDay = timesPerDay * doseDic("obj.dosageInstruction(0).doseQuantity.value") * _
+                formStrength.numeratorValue
+    Case doseDic("obj.dosageInstruction(0).doseRange.high.unit") = "Unit dose", _
+        doseDic("obj.dosageInstruction(0).doseRange.high.unit") = "Capsule", _
+        doseDic("obj.dosageInstruction(0).doseRange.high.unit") = "Tablet"
+            mgPerDay = timesPerDay * doseDic("obj.dosageInstruction(0).doseRange.high.value") * _
+                formStrength.numeratorValue
+    Case doseDic("obj.dosageInstruction(0).doseQuantity.unit") = "millilitre"
+            mgPerDay = timesPerDay * (formStrength.numeratorValue / formStrength.denominatorValue) * _
+                doseDic("obj.dosageInstruction(0).doseQuantity.value")
+    Case doseDic("obj.dosageInstruction(0).doseRange.high.unit") = "millilitre"
+            mgPerDay = timesPerDay * (formStrength.numeratorValue / formStrength.denominatorValue) * _
+                doseDic("obj.dosageInstruction(0).doseRange.high.value")
+    Case doseDic("obj.dosageInstruction(0).doseQuantity.unit") = "milligram"
+            mgPerDay = timesPerDay * doseDic("obj.dosageInstruction(0).doseQuantity.value")
+    Case doseDic("obj.dosageInstruction(0).doseRange.high.unit") = "milligram"
+            mgPerDay = timesPerDay * doseDic("obj.dosageInstruction(0).doseRange.high.value")
+    Case doseDic("obj.dosageInstruction(0).doseRange.high.unit") = "millilitre"
+            mgPerDay = timesPerDay * doseDic("obj.dosageInstruction(0).doseRange.high.value")
+    Case doseDic("obj.dosageInstruction(0).doseQuantity.unit") = "5 millilitre medicine spoonful"
+            mgPerDay = timesPerDay * (formStrength.numeratorValue / formStrength.denominatorValue) * 5 * _
+                doseDic("obj.dosageInstruction(0).doseQuantity.value")
+    Case doseDic("obj.dosageInstruction(0).rateRange.high.unit") = "milligram per day"
+            mgPerDay = doseDic("obj.dosageInstruction(0).rateRange.high.value")
+End Select
+
+'sequence > 1
+'times per day1
+Select Case True
+    Case doseDic("obj.dosageInstruction(1).timing.repeat.periodUnit") = "h"
+        timesPerDay1 = 24 / doseDic("obj.dosageInstruction(1).timing.repeat.period")
+    Case doseDic("obj.dosageInstruction(1).timing.repeat.periodUnit") = "d"
+        If doseDic("obj.dosageInstruction(1).timing.repeat.frequencyMax") > 0 Then
+            timesPerDay1 = doseDic("obj.dosageInstruction(1).timing.repeat.frequencyMax") / _
+                doseDic("obj.dosageInstruction(1).timing.repeat.period")
+        Else
+            timesPerDay1 = doseDic("obj.dosageInstruction(1).timing.repeat.frequency") / _
+                doseDic("obj.dosageInstruction(1).timing.repeat.period")
+        End If
+    Case doseDic("obj.dosageInstruction(1).timing.repeat.periodUnit") = "wk"
+        timesPerDay1 = 1
+End Select
+
+Select Case True
+    
+    Case doseDic("obj.dosageInstruction(1).doseQuantity.unit") = "Unit dose", _
+        doseDic("obj.dosageInstruction(1).doseQuantity.unit") = "Capsule", _
+        doseDic("obj.dosageInstruction(1).doseQuantity.unit") = "Tablet"
+            mgPerDay1 = timesPerDay1 * doseDic("obj.dosageInstruction(1).doseQuantity.value") * _
+                formStrength.numeratorValue
+    Case doseDic("obj.dosageInstruction(1).doseRange.high.unit") = "Unit dose", _
+        doseDic("obj.dosageInstruction(1).doseRange.high.unit") = "Capsule", _
+        doseDic("obj.dosageInstruction(1).doseRange.high.unit") = "Tablet"
+            mgPerDay1 = timesPerDay1 * doseDic("obj.dosageInstruction(1).doseRange.high.value") * _
+                formStrength.numeratorValue
+    Case doseDic("obj.dosageInstruction(1).doseQuantity.unit") = "millilitre"
+            mgPerDay1 = timesPerDay1 * (formStrength.numeratorValue / formStrength.denominatorValue) * _
+                doseDic("obj.dosageInstruction(1).doseQuantity.value")
+    Case doseDic("obj.dosageInstruction(1).doseRange.high.unit") = "millilitre"
+            mgPerDay1 = timesPerDay1 * (formStrength.numeratorValue / formStrength.denominatorValue) * _
+                doseDic("obj.dosageInstruction(1).doseRange.high.value")
+    Case doseDic("obj.dosageInstruction(1).doseQuantity.unit") = "milligram"
+            mgPerDay1 = timesPerDay1 * doseDic("obj.dosageInstruction(1).doseQuantity.value")
+    Case doseDic("obj.dosageInstruction(1).doseRange.high.unit") = "milligram"
+            mgPerDay1 = timesPerDay1 * doseDic("obj.dosageInstruction(1).doseRange.high.value")
+    Case doseDic("obj.dosageInstruction(1).doseRange.high.unit") = "millilitre"
+            mgPerDay1 = timesPerDay1 * doseDic("obj.dosageInstruction(1).doseRange.high.value")
+    Case doseDic("obj.dosageInstruction(1).doseQuantity.unit") = "5 millilitre medicine spoonful"
+            mgPerDay1 = timesPerDay1 * (formStrength.numeratorValue / formStrength.denominatorValue) * 5 * _
+                doseDic("obj.dosageInstruction(1).doseQuantity.value")
+    Case doseDic("obj.dosageInstruction(1).rateRange.high.unit") = "milligram per day"
+            mgPerDay1 = doseDic("obj.dosageInstruction(1).rateRange.high.value")
+End Select
+
+mgPerDay = mgPerDay + mgPerDay1
+
+'overrule if Maximum stated.
+Select Case True
+    Case doseDic("obj.dosageInstruction(0).maxDosePerPeriod.denominator.unit") = "hour" And _
+        doseDic("obj.dosageInstruction(0).maxDosePerPeriod.numerator.unit") = "milligram"
+            mgPerDay = (24 / doseDic("obj.dosageInstruction(0).maxDosePerPeriod.denominator.value")) * _
+                doseDic("obj.dosageInstruction(0).maxDosePerPeriod.numerator.value")
+
+    Case doseDic("obj.dosageInstruction(0).maxDosePerPeriod.denominator.unit") = "hour" And _
+        doseDic("obj.dosageInstruction(0).maxDosePerPeriod.numerator.unit") = "millilitre"
+            mgPerDay = (24 / doseDic("obj.dosageInstruction(0).maxDosePerPeriod.denominator.value")) * _
+                (formStrength.numeratorValue / formStrength.denominatorValue) * _
+                doseDic("obj.dosageInstruction(0).maxDosePerPeriod.numerator.value")
+
+    Case doseDic("obj.dosageInstruction(0).maxDosePerPeriod.denominator.unit") = "hour" And _
+        doseDic("obj.dosageInstruction(0).maxDosePerPeriod.numerator.unit") = "Unit dose", _
+        doseDic("obj.dosageInstruction(0).maxDosePerPeriod.denominator.unit") = "hour" And _
+        doseDic("obj.dosageInstruction(0).maxDosePerPeriod.numerator.unit") = "Tablet", _
+        doseDic("obj.dosageInstruction(0).maxDosePerPeriod.denominator.unit") = "hour" And _
+        doseDic("obj.dosageInstruction(0).maxDosePerPeriod.numerator.unit") = "Capsule"
+            mgPerDay = (24 / doseDic("obj.dosageInstruction(0).maxDosePerPeriod.denominator.value")) * _
+                formStrength.numeratorValue * _
+                doseDic("obj.dosageInstruction(0).maxDosePerPeriod.numerator.value")
+
+
+
+    Case doseDic("obj.dosageInstruction(0).maxDosePerPeriod.denominator.unit") = "day" And _
+        doseDic("obj.dosageInstruction(0).maxDosePerPeriod.numerator.unit") = "milligram"
+            mgPerDay = doseDic("obj.dosageInstruction(0).maxDosePerPeriod.numerator.value")
+
+    Case doseDic("obj.dosageInstruction(0).maxDosePerPeriod.denominator.unit") = "day" And _
+        doseDic("obj.dosageInstruction(0).maxDosePerPeriod.numerator.unit") = "millilitre"
+            mgPerDay = (formStrength.numeratorValue / formStrength.denominatorValue) * _
+                doseDic("obj.dosageInstruction(0).maxDosePerPeriod.numerator.value")
+
+    Case doseDic("obj.dosageInstruction(0).maxDosePerPeriod.denominator.unit") = "day" And _
+        doseDic("obj.dosageInstruction(0).maxDosePerPeriod.numerator.unit") = "Unit dose", _
+        doseDic("obj.dosageInstruction(0).maxDosePerPeriod.denominator.unit") = "day" And _
+        doseDic("obj.dosageInstruction(0).maxDosePerPeriod.numerator.unit") = "Tablet", _
+        doseDic("obj.dosageInstruction(0).maxDosePerPeriod.denominator.unit") = "day" And _
+        doseDic("obj.dosageInstruction(0).maxDosePerPeriod.numerator.unit") = "Capsule"
+            mgPerDay = formStrength.numeratorValue * _
+                doseDic("obj.dosageInstruction(0).maxDosePerPeriod.numerator.value")
+
+End Select
+    
+morphineDoseEquivalentOf = mgPerDay * conversionFactor
+
+If conversionFactor = 0 Then
+    morphineDoseEquivalentOf = ""
+Else
+    morphineDoseEquivalentOf = mgPerDay * conversionFactor
+End If
+
+'Debug.Print timesPerDay, mgPerDay, timesPerDay1, mgPerDay1, conversionFactor, formStrength.numeratorValue, formStrength.numeratorUnit, formStrength.denominatorValue, formStrength.denominatorUnit
+
+   
+End Function
+
+Private Function mdeConversionFactorOf(formDesc As String) As Double
+    'Discern which opioid and set conversion factor.
+
+'https://www.fpm.ac.uk/opioids-aware-structured-approach-opioid-prescribing/dose-equivalents-and-changing-opioids
+
+formDesc = UCase(formDesc)
+
+Select Case True
+  
+    'TRAMADOL
+    Case formDesc Like "*TRAM*", _
+        formDesc Like "*ZYDOL*", _
+        formDesc Like "*ZAMADOL*", _
+        formDesc Like "*BRIMISOL*", _
+        formDesc Like "*MAROL*", _
+        formDesc Like "*TILODOL*"
+            mdeConversionFactorOf = 0.1
+    'CODEINE
+    Case formDesc Like "CODEINE*", _
+        formDesc Like "*ZAPAIN*", _
+        formDesc Like "*SOLPAD*", _
+        formDesc Like "*CODAMOL*", _
+        formDesc Like "*MIGRALEVE*", _
+        formDesc Like "*TYLEX*"
+            mdeConversionFactorOf = 0.1
+    'DIHYDROCODEINE
+    Case formDesc Like "DIHYDROCODEINE*", _
+        formDesc Like "*DYDRAMOL*", _
+        formDesc Like "REMEDEINE*", _
+        formDesc Like "*DHC*", _
+        formDesc Like "*DF118*"
+            mdeConversionFactorOf = 0.1
+    'MORPHINE
+    Case formDesc Like "*MORPHINE*", _
+        formDesc Like "*MST*", _
+        formDesc Like "*ZOMORPH*", _
+        formDesc Like "*ORAMORPH*", _
+        formDesc Like "*SEVREDOL*", _
+        formDesc Like "*ACTIMORPH*", _
+        formDesc Like "*MORPHGESIC*", _
+        formDesc Like "*MXL *", _
+        formDesc Like "*ORAMORPH*", _
+        formDesc Like "*SENDOLOR*"
+            mdeConversionFactorOf = 1
+    'FENTANYL patch
+    Case formDesc Like "*FENTANYL*PATCH*", _
+        formDesc Like "*DTRANS*", _
+        formDesc Like "*MATRI*PATCH*", _
+        formDesc Like "*FENCINO*", _
+        formDesc Like "*FENYLAT*", _
+        formDesc Like "*OPIODUR*", _
+        formDesc Like "*VICTANYL*", _
+        formDesc Like "*YEMEX*"
+            mdeConversionFactorOf = 2400
+    'FENTANYL SL/Buccal/Lozenge/amp/nasal
+    'https://www.cheshireformulary.nhs.uk/docs/files/Approximate%20Opioid%20Equivalence%20Guide%2013.05.2021.pdf
+    Case formDesc Like "*FENTANYL* SUBLINGUAL*", _
+        formDesc Like "*IREMIA*", _
+        formDesc Like "*ABSTRAL*", _
+        formDesc Like "*FENHUMA*", _
+        formDesc Like "*FENTANYL* LOZEN*", _
+        formDesc Like "*ACTIQ*", _
+        formDesc Like "*CYNRIL*" ', _
+        'formDesc Like "*FENTANYL* AMP*", _
+        'formDesc Like "*FENTANYL* INFUSION*", _
+        'formDesc Like "*PECFENT*", _
+        'formDesc Like "*FENTANYL* NASAL*"
+            mdeConversionFactorOf = 150
+    'TAPENTADOL
+    'https://www.cheshireformulary.nhs.uk/docs/files/Approximate%20Opioid%20Equivalence%20Guide%2013.05.2021.pdf
+    Case formDesc Like "*TAPENTADOL*", _
+        formDesc Like "*PALEXIA*"
+            mdeConversionFactorOf = 0.4
+    'BUPRENORPHINE Patch
+    Case formDesc Like "*BUPRENORPHINE*", _
+        formDesc Like "*BUTEC*", _
+        formDesc Like "*BUTRANS*", _
+        formDesc Like "*BUPEAZE*", _
+        formDesc Like "*TRANSTEC*", _
+        formDesc Like "*BUNOV*", _
+        formDesc Like "*REBRIKEL*", _
+        formDesc Like "*RELETRANS*", _
+        formDesc Like "*SEVODYNE*", _
+        formDesc Like "*PANITAZ*", _
+        formDesc Like "*CARLOSAFINE*", _
+        formDesc Like "*HAPOCTASIN*", _
+        formDesc Like "*RELEVTEC*", _
+        formDesc Like "*TRANSTEC*", _
+        formDesc Like "*RELETRANS*"
+            mdeConversionFactorOf = 2400
+    'BUPRENORPHINE Tab
+    'https://www.cheshireformulary.nhs.uk/docs/files/Approximate%20Opioid%20Equivalence%20Guide%2013.05.2021.pdf
+    Case formDesc Like "*BUPRENORPHINE*TAB*", _
+        formDesc Like "*TEMGESIC*", _
+        formDesc Like "*SUBOXONE*", _
+        formDesc Like "*SUBUTEX*"
+            mdeConversionFactorOf = 80 'find reference
+    'OXYCODONE
+    Case formDesc Like "*OXYCODONE*", _
+        formDesc Like "*SHORTEC*", _
+        formDesc Like "*LONGTEC*", _
+        formDesc Like "*OXYCONTIN*", _
+        formDesc Like "*OXYNORM*", _
+        formDesc Like "*TARGINACT*", _
+        formDesc Like "*OXELTRA*"
+            mdeConversionFactorOf = 1.5
+    'hydromorphone
+    Case formDesc Like "*HYDROMORPHONE*"
+        mdeConversionFactorOf = 5
+    'METHADONE
+    Case formDesc Like "*METHADONE*", formDesc Like "*PHYSEPTONE*"
+        'ideally return "seek specialist advice" but returns a double
+        mdeConversionFactorOf = CVErr(xlErrValue)
+    Case Else
+        'ideally return "formulation not recognised"
+        mdeConversionFactorOf = 0
+    End Select
+
+'Debug.Print mdeConversionFactorOf
+
+End Function
+
+Private Function extractedStrength(formDesc As String) As strengthPerUnit
+    
+Dim strPattern As String
+Dim strInput As String
+Dim strReplace As String
+Dim strOutput As String
+Dim unitSplit() As String
+Dim preSlashQuant As String
+Dim postSlashQuant As String
+Dim preSlashNum As Double
+Dim postSlashNum As Double
+Dim spu As strengthPerUnit
+
+Static regEx2 As Object
+
+Set regEx2 = Nothing
+    
+If regEx2 Is Nothing Then Set regEx2 = CreateObject("VBScript.RegExp")
+    
+strPattern = "[0-9]+\.?[0-9]*?[a-zA-Z]+\/?[0-9]*\.?[0-9]*[a-zA-Z]*|[0-9]+\.?[0-9]*%" 'needs amending for inhaler strengths.
+
+If strPattern <> "" Then
+    strInput = Replace(formDesc, ",", "")
+            
+    With regEx2
+        .Global = True
+        .MultiLine = True
+        .IgnoreCase = False
+        .Pattern = strPattern
+    End With
+    
+    If regEx2.Test(strInput) Then
+        strOutput = regEx2.Execute(strInput)(0).value
+    Else
+        strOutput = "Strength pattern not matched"
+    End If
+End If
+
+    'deconstruct units
+
+If strOutput Like "*/*" Then
+    unitSplit = Split(strOutput, "/")
+    preSlashQuant = unitSplit(0)
+    postSlashQuant = unitSplit(1)
+ElseIf strOutput Like "*[%]*" Then
+    unitSplit = Split(strOutput, "%")
+    preSlashQuant = unitSplit(0)
+    postSlashQuant = ""
+Else
+    preSlashQuant = strOutput
+    postSlashQuant = ""
+End If
+
+'seperate value from units and assign to variables.
+
+spu.numeratorValue = Val(preSlashQuant)
+spu.numeratorUnit = Replace(preSlashQuant, spu.numeratorValue, "")
+spu.denominatorValue = Val(postSlashQuant)
+spu.denominatorUnit = Replace(postSlashQuant, spu.denominatorValue, "")
+
+If (UCase(spu.denominatorUnit) = "ML" Or UCase(spu.denominatorUnit) = "HOUR") And spu.denominatorValue = 0 Then
+    spu.denominatorValue = 1
+End If
+
+extractedStrength = spu
+
+End Function
+
