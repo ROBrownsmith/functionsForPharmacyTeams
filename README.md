@@ -109,9 +109,9 @@ Becomes:
 |            |         |       |       |       |       |   |   |   |   |
 
 
-**FIHRDosage**(doseInstruction As Range)
+**FHIRDosage**(doseInstruction As Range)
 
-Uses clsDosage to return a FIHR STU3 compatible JSON.
+Uses clsDosage to return a FHIR STU3 compatible JSON.
 
 
 **scriptDurationInDays**(doseInstruction As Range, scriptQuantity As Range)
@@ -130,7 +130,7 @@ Doses with a Sequence property value > 2 will not be calculated correctly.
 
 **clsDosage**
 
-Aims to convert a dose-instruction string to a FIHR STU3 compatible JSON
+Aims to convert a dose-instruction string to a FHIR STU3 compatible JSON
 
 https://hl7.org/fhir/STU3/dosage.html
 
@@ -138,7 +138,7 @@ This interprets/parses the dose instruction string and returns the concepts as s
 
 <ins> Class Method(s): </ins>
 
-FIHR3JSONConvertedFrom(doseString As String) As String
+FHIR3JSONConvertedFrom(doseString As String) As String
 
 
 **clsDoseProcessor**
