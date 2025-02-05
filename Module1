@@ -1,6 +1,6 @@
-Function FIHRDosage(doseInstruction As Range)
+Function FHIRDosage(doseInstruction As Range)
 Dim dz As New clsDosage
-FIHRDosage = dz.convertDoseStringToFIHR3JSON(doseInstruction.Value2)
+FHIRDosage = dz.convertDoseStringToFHIR3JSON(doseInstruction.Value2)
 End Function
 
 Function scriptDurationInDays(doseInstruction As Range, scriptQuantity As Range)
