@@ -1,0 +1,917 @@
+Function FIHRDosage(doseInstruction As Range)
+Dim dz As New clsDosage
+FIHRDosage = dz.convertDoseStringToFIHR3JSON(doseInstruction.Value2)
+End Function
+
+Function scriptDurationInDays(doseInstruction As Range, scriptQuantity As Range)
+Dim processor As New clsDoseProcessor
+scriptDurationInDays = processor.scriptDurationIs(doseInstruction.Value2, Val(scriptQuantity.Value2))
+End Function
+
+Function morphineEquivalentFrom(doseInstruction As Range, formDescRng As Range)
+Dim processor As New clsDoseProcessor
+morphineEquivalentFrom = processor.morphineDoseEquivalentOf(doseInstruction.Value2, formDescRng.Value2)
+End Function
+
+Function cockroftAndGault(age As Range, gender As Range, weightInKg As Range, sCrumolL As Range) As Double
+    ' By Robert.Brownsmith@nhs.net
+    ''derived https://bnf.nice.org.uk/medicines-guidance/prescribing-in-renal-impairment/
+    
+    Dim ageValue As Integer
+    Dim genderValue As String
+    Dim weightValue As Double
+    Dim sCrValue As Double
+    Dim constant As Double
+    
+    ageValue = age.value
+    genderValue = gender.value
+    weightValue = Val(weightInKg.value)
+    sCrValue = Val(sCrumolL.value)
+    
+    If Left(UCase(genderValue), 1) = "M" Then
+        constant = 1.23
+    ElseIf Left(UCase(genderValue), 1) = "F" Then
+        constant = 1.04
+    End If
+    
+    cockroftAndGault = Round(((140 - ageValue) * weightValue * constant) / sCrValue, 2)
+        
+End Function
+Function eGFR2009CKDEPI(age As Range, sex As Range, sCrumolL As Range) As Double
+' By Robert.Brownsmith@nhs.net
+'derived https://bnf.nice.org.uk/medicines-guidance/prescribing-in-renal-impairment/
+'eGFRcr = 141 x min(Scr/k, 1)^a x max(Scr/k, 1)^-1.209 x 0.993^Age x 1.018 [if female]
+    
+    Dim ageValue As Integer
+    Dim sexValue As String
+    Dim sCrValue As Double
+    Dim constantKappa As Double
+    Dim constantAlpha As Double
+    Dim constantBeta As Double
+   
+   
+    ageValue = age.value
+    sexValue = sex.value
+    sCrValue = Val(sCrumolL.value) * 0.011312 'converts from umolL to mgdL
+    
+    
+    
+    If Left(UCase(sexValue), 1) = "M" Then
+        constantAlpha = -0.411
+        constantKappa = 0.9
+        constantBeta = 1
+    ElseIf Left(UCase(sexValue), 1) = "F" Then
+        constantAlpha = -0.329
+        constantKappa = 0.7
+        constantBeta = 1.018
+    End If
+
+eGFR2009CKDEPI = Round(141 * (WorksheetFunction.Power((WorksheetFunction.Min((sCrValue / constantKappa), 1)), constantAlpha)) * (WorksheetFunction.Power((WorksheetFunction.Max((sCrValue / constantKappa), 1)), -1.209)) * (WorksheetFunction.Power(0.993, age)) * constantBeta, 0)
+
+
+End Function
+
+Function bodyMassIndex(weightInKg As Range, heightInMetres As Range)
+' By Robert.Brownsmith@nhs.net
+    If Val(heightInMetres.value) < 1 Then 'throws an error if person less than, arbitrarily, a metre high
+        bodyMassIndex = CVErr(xlErrValue)
+    Else
+        bodyMassIndex = Round((Val(weightInKg.value)) / (Val(heightInMetres.value) ^ 2))
+    End If
+    
+End Function
+
+Function idealWeightInKg(gender As Range, heightInM As Range) As Double
+' By Robert.Brownsmith@nhs.net
+
+    Dim genderValue As String
+    Dim heightValue As Double
+    Dim weightFuncConstant As Double
+        
+    heightValue = Val(heightInM.value) * 100
+    genderValue = Left(UCase(gender.value), 1)
+    
+    'catch error
+    If heightValue < 1 Then
+        idealWeightInKg = CVErr(xlErrValue)
+    ElseIf genderValue = "M" Then
+        weightFuncConstant = 50
+    Else
+        weightFuncConstant = 45.5
+    End If
+        
+    idealWeightInKg = Round((weightFuncConstant + (0.91 * (heightValue - 152.4))), 2)
+
+End Function
+
+Function removeUnits(rngValueWithUnits As Range)
+' By Robert.Brownsmith@nhs.net
+    If Val(rngValueWithUnits.value) = 0 Then
+        removeUnits = ""
+    Else
+        removeUnits = Val(rngValueWithUnits.value)
+    End If
+    
+End Function
+
+Public Function AECScore(formDescCells As Range) As Integer
+' By Robert.Brownsmith@nhs.net
+
+Dim aec As Integer
+aec = 0
+
+' need to fix this because if same drug appears twice it is counted twice.
+For Each c In formDescCells.Cells
+       
+    'Look for AEC score
+    'https://kclpure.kcl.ac.uk/portal/files/94138490/Anticholinergic_effect_on_cognition_Publishedonline9June2016_GREEN_AAM.pdf
+    'brand synonyms taken from BNF
+    If UCase(c.value) Like "ALIMEMAZINE*" Or _
+        UCase(c.value) Like "ALFRESED*" Or _
+        UCase(c.value) Like "ITZENAL*" Then
+        aec = aec + 3
+    ElseIf UCase(c.value) Like "AMITRIPTYLINE*" Then
+        aec = aec + 3
+    ElseIf UCase(c.value) Like "ATROPINE*" Then
+        aec = aec + 3
+    ElseIf UCase(c.value) Like "BENZTROPINE*" Then
+        aec = aec + 3
+    ElseIf UCase(c.value) Like "CHLORPROMAZINE*" Or _
+        UCase(c.value) Like "LARGACTIL*" Then
+        aec = aec + 3
+    ElseIf UCase(c.value) Like "CLEMASTINE*" Then
+        aec = aec + 3
+    ElseIf UCase(c.value) Like "CLOMIPRAMINE*" Then
+        aec = aec + 3
+    ElseIf UCase(c.value) Like "CLOZAPINE*" Or _
+        UCase(c.value) Like "CLOZARIL*" Or _
+        UCase(c.value) Like "DENZAPINE*" Or _
+        UCase(c.value) Like "ZAPONEX*" Then
+        aec = aec + 3
+    ElseIf UCase(c.value) Like "CYPROHEPTADINE*" Or _
+        UCase(c.value) Like "PERIACTIN*" Then
+        aec = aec + 3
+    ElseIf UCase(c.value) Like "DOSULEPIN*" Then
+        aec = aec + 3
+    ElseIf UCase(c.value) Like "DOXEPIN*" Or _
+        UCase(c.value) Like "XEPIN*" Then
+        aec = aec + 3
+    ElseIf UCase(c.value) Like "HYOSCINE HYDROBROMIDE*" Or _
+        UCase(c.value) Like "KWELLS*" Or _
+        UCase(c.value) Like "JOY-RIDES*" Or _
+        UCase(c.value) Like "SCOPODERM*" Then
+        aec = aec + 3
+    ElseIf UCase(c.value) Like "IMIPRAMINE*" Then
+        aec = aec + 3
+    ElseIf UCase(c.value) Like "LOFEPRAMINE*" Then
+        aec = aec + 3
+    ElseIf UCase(c.value) Like "NORTRIPTYLINE*" Then
+        aec = aec + 3
+    ElseIf UCase(c.value) Like "ORPHENADRINE*" Then
+        aec = aec + 3
+    ElseIf UCase(c.value) Like "OXYBUTYNIN*" Or _
+        UCase(c.value) Like "DITROPAN*" Or _
+        UCase(c.value) Like "KENTERA*" Or _
+        UCase(c.value) Like "LYRINEL*" Then
+        aec = aec + 3
+    ElseIf UCase(c.value) Like "PROCYCLIDINE*" Or _
+        UCase(c.value) Like "KEMADRIN*" Then
+        aec = aec + 3
+    ElseIf UCase(c.value) Like "PROMETHAZINE*" Or _
+        UCase(c.value) Like "SOMINEX*" Or _
+        UCase(c.value) Like "PHENERGAN*" Or _
+        UCase(c.value) Like "AVOMINE*" Or _
+        UCase(c.value) Like "VERTIGON*" Then
+        aec = aec + 3
+    ElseIf UCase(c.value) Like "TRIHEXYPHENIDYL*" Then
+        aec = aec + 3
+    ElseIf UCase(c.value) Like "TRIMIPRAMINE*" Then
+        aec = aec + 3
+    ElseIf UCase(c.value) Like "AMANTADINE*" Then
+        aec = aec + 2
+    ElseIf UCase(c.value) Like "CHLORPHENAMINE*" Or _
+        UCase(c.value) Like "ALLERIEF*" Or _
+        UCase(c.value) Like "PIRITON*" Or _
+        UCase(c.value) Like "HAYLEVE*" Then
+        aec = aec + 2
+    ElseIf UCase(c.value) Like "DESIPRAMINE*" Then
+        aec = aec + 2
+    ElseIf UCase(c.value) Like "DICYCLOVERINE*" Then
+        aec = aec + 2
+    ElseIf UCase(c.value) Like "DIMENHYDRINATE*" Then
+        aec = aec + 2
+    ElseIf UCase(c.value) Like "DIPHENHYDRAMINE*" Or _
+        UCase(c.value) Like "NYTOL*" Then
+        aec = aec + 2
+    ElseIf UCase(c.value) Like "DISOPYRAMIDE*" Or _
+        UCase(c.value) Like "RYTHMODAN*" Then
+        aec = aec + 2
+    ElseIf UCase(c.value) Like "LEVOMEPROMAZINE*" Or _
+        UCase(c.value) Like "METHOTRIMEPRAZINE*" Or _
+        UCase(c.value) Like "NOZINAN*" Or _
+        UCase(c.value) Like "LEVOROL*" Then
+        aec = aec + 2
+    ElseIf UCase(c.value) Like "OLANZAPINE*" Or _
+        UCase(c.value) Like "ZYPREXA*" Then
+        aec = aec + 2
+    ElseIf UCase(c.value) Like "PAROXETINE*" Or _
+        UCase(c.value) Like "SEROXAT*" Then
+        aec = aec + 2
+    ElseIf UCase(c.value) Like "PETHIDINE*" Or _
+        UCase(c.value) Like "MEPERIDINE*" Then
+        aec = aec + 2
+    ElseIf UCase(c.value) Like "PIMOZIDE*" Or _
+        UCase(c.value) Like "ORAP*" Then
+        aec = aec + 2
+    ElseIf UCase(c.value) Like "PROCHLORPERAZINE*" Or _
+        UCase(c.value) Like "STEMETIL*" Or _
+        UCase(c.value) Like "BUCCASTEM*" Then
+        aec = aec + 2
+    ElseIf UCase(c.value) Like "PROMAZINE*" Then
+        aec = aec + 2
+    ElseIf UCase(c.value) Like "PROPANTHELINE*" Or _
+        UCase(c.value) Like "PRO-BANTHINE*" Then
+        aec = aec + 2
+    ElseIf UCase(c.value) Like "QUETIAPINE*" Or _
+        UCase(c.value) Like "SEROQUEL*" Or _
+        UCase(c.value) Like "ATROLAK*" Or _
+        UCase(c.value) Like "BIQUELLE*" Or _
+        UCase(c.value) Like "BRANCICO*" Or _
+        UCase(c.value) Like "MINTRELEQ*" Or _
+        UCase(c.value) Like "SONDATE*" Or _
+        UCase(c.value) Like "ZALURON*" Then
+        aec = aec + 2
+    ElseIf UCase(c.value) Like "TOLTERODINE*" Or _
+        UCase(c.value) Like "DETRUSITOL*" Or _
+        UCase(c.value) Like "MARIOSEA*" Or _
+        UCase(c.value) Like "NEDITOL*" Or _
+        UCase(c.value) Like "TOLTERMA*" Or _
+        UCase(c.value) Like "TOLTHEN*" Or _
+        UCase(c.value) Like "BLERONE*" Or _
+        UCase(c.value) Like "PREBLACON*" Then
+        aec = aec + 2
+    ElseIf UCase(c.value) Like "TRIFLUOPERAZINE*" Or _
+        UCase(c.value) Like "STELAZINE*" Then
+        aec = aec + 2
+    ElseIf UCase(c.value) Like "AMIODARONE*" Or _
+        UCase(c.value) Like "CORDARONE*" Then
+        aec = aec + 1
+    ElseIf UCase(c.value) Like "ARIPIPRAZOLE*" Or _
+        UCase(c.value) Like "ABILIFY*" Then
+        aec = aec + 1
+    ElseIf UCase(c.value) Like "BROMOCRIPTINE*" Then
+        aec = aec + 1
+    ElseIf UCase(c.value) Like "CARBAMAZEPINE*" Or _
+        UCase(c.value) Like "TEHTRETOL*" Or _
+        UCase(c.value) Like "CURATIL*" Then
+        aec = aec + 1
+    ElseIf UCase(c.value) Like "CITALOPRAM*" Or _
+        UCase(c.value) Like "CIPRAMIL*" Then
+        aec = aec + 1
+    ElseIf UCase(c.value) Like "DIAZEPAM*" Or _
+        UCase(c.value) Like "VALIUM*" Then
+        aec = aec + 1
+    ElseIf UCase(c.value) Like "DOMPERIDONE*" Or _
+        UCase(c.value) Like "MOTILIUM*" Then
+        aec = aec + 1
+    ElseIf UCase(c.value) Like "FENTANYL*" Or _
+        UCase(c.value) Like "ABSTRAL*" Or _
+        UCase(c.value) Like "FUNHUMA*" Or _
+        UCase(c.value) Like "EFFENTORA*" Or _
+        UCase(c.value) Like "ACTIQ*" Or _
+        UCase(c.value) Like "CYNRIL*" Or _
+        UCase(c.value) Like "DUROGESIC*" Or _
+        UCase(c.value) Like "FENCINO*" Or _
+        UCase(c.value) Like "MATRIFEN*" Or _
+        UCase(c.value) Like "MEZOLAR*" Or _
+        UCase(c.value) Like "OPIODUR*" Or _
+        UCase(c.value) Like "VICTANYL*" Or _
+        UCase(c.value) Like "YEMEX*" Or _
+        UCase(c.value) Like "PECFENT*" Then
+        aec = aec + 1
+    ElseIf UCase(c.value) Like "FLUOXETINE*" Or _
+        UCase(c.value) Like "OLENA*" Or _
+        UCase(c.value) Like "PROZAC*" Or _
+        UCase(c.value) Like "PROZEP*" Then
+        aec = aec + 1
+    ElseIf UCase(c.value) Like "FLUPHENZINE*" Or _
+        UCase(c.value) Like "MODECATE*" Then
+        aec = aec + 1
+    ElseIf UCase(c.value) Like "HYDROXYZINE*" Then
+        aec = aec + 1
+    ElseIf UCase(c.value) Like "ILOPERIDONE*" Then
+        aec = aec + 1
+    ElseIf UCase(c.value) Like "LITHIUM*" Or _
+        UCase(c.value) Like "PRIADEL*" Or _
+        UCase(c.value) Like "CAMCOLIT*" Or _
+        UCase(c.value) Like "LI-LIQUID*" Or _
+        UCase(c.value) Like "LISKONUM*" Then
+        aec = aec + 1
+    ElseIf UCase(c.value) Like "MIRTAZAPINE*" Or _
+        UCase(c.value) Like "ZISPIN*" Then
+        aec = aec + 1
+    ElseIf UCase(c.value) Like "PERPHENAZINE*" Then
+        aec = aec + 1
+    ElseIf UCase(c.value) Like "PREDNISOLONE*" Or _
+        UCase(c.value) Like "DILACORT*" Then
+        aec = aec + 1
+    ElseIf UCase(c.value) Like "QUINIDINE*" Then
+        aec = aec + 1
+    ElseIf UCase(c.value) Like "SERTINDOLE*" Then
+        aec = aec + 1
+    ElseIf UCase(c.value) Like "SERTRALINE*" Or _
+        UCase(c.value) Like "LUSTRAL*" Or _
+        UCase(c.value) Like "CONTULEN*" Then
+        aec = aec + 1
+    ElseIf UCase(c.value) Like "SOLIFENACIN*" Or _
+        UCase(c.value) Like "VESICARE*" Then
+        aec = aec + 1
+    ElseIf UCase(c.value) Like "TEMAZEPAM*" Then
+        aec = aec + 1
+      
+    End If
+Next
+
+AECScore = aec
+
+End Function
+
+Public Function addACBScore(formDescCells1 As Range) As Integer
+' By Robert.Brownsmith@nhs.net
+
+Dim acb As Integer
+acb = 0
+
+'list from https://www.acbcalc.com/medicines
+'augmented with brand synonyms from BNF.
+'note - no score for dosulepin, lofepramine, prochlorperazine, promazine, amiodarone, sertindole
+'note - different scores for levomepromazine and methotrimeprazine
+
+For Each c In formDescCells1.Cells
+
+    If UCase(c.value) Like "ACLIDINIUM*" Then
+        acb = acb + 1
+    
+    ElseIf UCase(c.value) Like "ALIMEMAZINE*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "ALPRAZOLAM*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "ALVERINE*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "AMPICILLIN*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "ARIPIPRAZOLE*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "ASENAPINE*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "ATENOLOL*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "BACLOFEN*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "BENAZEPRIL*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "BETAXOLOL*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "BISACODYL*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "BROMOCRIPTINE*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "BUPROPION*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "CAPTOPRIL*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "CELECOXIB*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "CETIRIZINE*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "CHLORDIAZEPOXIDE*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "CHLORTALIDONE*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "CICLOSPORIN*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "CITALOPRAM*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "CLIDINIUM*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "CLINDAMYCIN*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "CLONAZEPAM*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "CLORAZEPATE*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "CO-CODAMOL*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "CODEINE*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "COLCHICINE*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "DESLORATADINE*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "DEXAMETHASONE*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "DEXTROMETHORPHAN*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "DIAZEPAM*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "DIGOXIN*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "DILTIAZEM*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "DIMETINDENE*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "DIPYRIDAMOLE*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "DISOPYRAMIDE*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "DOMPERIDONE*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "ENTACAPONE*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "ESCITALOPRAM*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "ETORICOXIB*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "FAMOTIDINE*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "FENTANYL*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "FEXOFENADINE*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "FLUNITRAZEPAM*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "FLUOXETINE*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "FLUPHENAZINE*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "FLURAZEPAM*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "FLUVOXAMINE*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "FUROSEMIDE*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "GENTAMICIN*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "GLYCOPYRRONIUM*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "GUAIFENESIN*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "HYDRALAZINE*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "HYDROCORTISONE*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "ILOPERIDONE*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "IPRATROPIUM*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "ISOSORBIDE MONONITRATE*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "ISOSORBIDE DINITRATE*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "KETORALAC*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "LANSOPRAZOLE*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "LEVOCETIRIZINE*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "LEVODOPA*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "LITHIUM*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "LORATADINE*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "LORAZEPAM*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "METFORMIN*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "METHOTREXATE*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "METHYLPREDNISOLONE*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "METOCLOPRAMIDE*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "METOPROLOL*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "MIDAZOLAM*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "MIRTAZAPINE*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "MORPHINE*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "NARATRIPTAN*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "NIFEDIPINE*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "OXAZEPAM*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "OXYCODONE*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "PALIPERIDONE*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "PANCURONIUM*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "PHENOBARBITOL*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "PIPERACILLIN*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "PRAMIPEXOLE*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "PREDNISOLONE*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "PSEUDOEPHEDRINE*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "QUINIDINE*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "RISPERIDONE*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "ROTIGOTINE*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "SELEGILINE*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "SERTRALINE*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "SUMATRIPTAN*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "TEMAZEPAM*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "TIOTROPIUM*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "TRANDOLAPRIL*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "TRAZODONE*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "TRIAMCINOLONE*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "TRIAMTERENE*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "TRIAZOLAM*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "VALPROIC*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "VANCOMYCIN*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "VENLAFAXINE*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "WARFARIN*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "ZIPRASIDONE*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "ZOLMITRIPTAN*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "AMANTADINE*" Then acb = acb + 2
+    ElseIf UCase(c.value) Like "BELLADONNA*" Then acb = acb + 2
+    ElseIf UCase(c.value) Like "CARBAMAZEPINE*" Then acb = acb + 2
+    ElseIf UCase(c.value) Like "CIMETIDINE*" Then acb = acb + 2
+    ElseIf UCase(c.value) Like "CO-TENIDONE*" Then acb = acb + 2
+    ElseIf UCase(c.value) Like "CYCLOBENZAPRINE*" Then acb = acb + 2
+    ElseIf UCase(c.value) Like "HALOPERIDOL*" Then acb = acb + 2
+    ElseIf UCase(c.value) Like "LOPERAMIDE*" Then acb = acb + 2
+    ElseIf UCase(c.value) Like "LOXAPINE*" Then acb = acb + 2
+    ElseIf UCase(c.value) Like "MAPROTILINE*" Then acb = acb + 2
+    ElseIf UCase(c.value) Like "METHADONE*" Then acb = acb + 2
+    ElseIf UCase(c.value) Like "MOLINDONE*" Then acb = acb + 2
+    ElseIf UCase(c.value) Like "NEFOPAM*" Then acb = acb + 2
+    ElseIf UCase(c.value) Like "OPIPRAMOL*" Then acb = acb + 2
+    ElseIf UCase(c.value) Like "OXCARBAZEPINE*" Then acb = acb + 2
+    ElseIf UCase(c.value) Like "PETHIDINE*" Then acb = acb + 2
+    ElseIf UCase(c.value) Like "PIMOZIDE*" Then acb = acb + 2
+    ElseIf UCase(c.value) Like "RANITIDINE*" Then acb = acb + 2
+    ElseIf UCase(c.value) Like "STALEVO*" Then acb = acb + 2
+    ElseIf UCase(c.value) Like "THEOPHYLLINE*" Then acb = acb + 2
+    ElseIf UCase(c.value) Like "TRAMADOL*" Then acb = acb + 2
+    ElseIf UCase(c.value) Like "AMITRIPTYLINE*" Then acb = acb + 3
+    ElseIf UCase(c.value) Like "AMOXAPINE*" Then acb = acb + 3
+    ElseIf UCase(c.value) Like "ATROPINE*" Then acb = acb + 3
+    ElseIf UCase(c.value) Like "BENZTROPINE*" Then acb = acb + 3
+    ElseIf UCase(c.value) Like "BROMPHENIRAMINE*" Then acb = acb + 3
+    ElseIf UCase(c.value) Like "CARBINOXAMINE*" Then acb = acb + 3
+    ElseIf UCase(c.value) Like "CHLORPHENAMINE*" Then acb = acb + 3
+    ElseIf UCase(c.value) Like "CHLORPROMAZINE*" Then acb = acb + 3
+    ElseIf UCase(c.value) Like "CLEMASTINE*" Then acb = acb + 3
+    ElseIf UCase(c.value) Like "CLOMIPRAMINE*" Then acb = acb + 3
+    ElseIf UCase(c.value) Like "CLOZAPINE*" Then acb = acb + 3
+    ElseIf UCase(c.value) Like "CYPROHEPTADINE*" Then acb = acb + 3
+    ElseIf UCase(c.value) Like "DARIFENACIN*" Then acb = acb + 3
+    ElseIf UCase(c.value) Like "DESIPRAMINE*" Then acb = acb + 3
+    ElseIf UCase(c.value) Like "DICYCLOVERINE*" Then acb = acb + 3
+    ElseIf UCase(c.value) Like "DIMENHYDRINATE*" Then acb = acb + 3
+    ElseIf UCase(c.value) Like "DIPHENHYDRAMINE*" Then acb = acb + 3
+    ElseIf UCase(c.value) Like "DOXEPIN*" Then acb = acb + 3
+    ElseIf UCase(c.value) Like "DOXYLAMINE*" Then acb = acb + 3
+    ElseIf UCase(c.value) Like "FESOTERODINE*" Then acb = acb + 3
+    ElseIf UCase(c.value) Like "FLAVOXATE*" Then acb = acb + 3
+    ElseIf UCase(c.value) Like "HYDROXYZINE*" Then acb = acb + 3
+    ElseIf UCase(c.value) Like "HYOSCINE*" Then acb = acb + 3
+    ElseIf UCase(c.value) Like "HYOSCYAMINE*" Then acb = acb + 3
+    ElseIf UCase(c.value) Like "IMIPRAMINE*" Then acb = acb + 3
+    ElseIf UCase(c.value) Like "LEVOMEPROMAZINE*" Then acb = acb + 3
+    ElseIf UCase(c.value) Like "MECLIZINE*" Then acb = acb + 3
+    ElseIf UCase(c.value) Like "METHOCARBAMOL*" Then acb = acb + 3
+    ElseIf UCase(c.value) Like "NORTRIPTYLINE*" Then acb = acb + 3
+    ElseIf UCase(c.value) Like "OLANZAPINE*" Then acb = acb + 3
+    ElseIf UCase(c.value) Like "ORPHENADRINE*" Then acb = acb + 3
+    ElseIf UCase(c.value) Like "OXYBUTYNIN*" Then acb = acb + 3
+    ElseIf UCase(c.value) Like "PAROXETINE*" Then acb = acb + 3
+    ElseIf UCase(c.value) Like "PERPHENAZINE*" Then acb = acb + 3
+    ElseIf UCase(c.value) Like "PROCYCLIDINE*" Then acb = acb + 3
+    ElseIf UCase(c.value) Like "PROMETHAZINE*" Then acb = acb + 3
+    ElseIf UCase(c.value) Like "PROPANTHELINE*" Then acb = acb + 3
+    ElseIf UCase(c.value) Like "PROPIVERINE*" Then acb = acb + 3
+    ElseIf UCase(c.value) Like "QUETIAPINE*" Then acb = acb + 3
+    ElseIf UCase(c.value) Like "SCOPOLAMINE*" Then acb = acb + 3
+    ElseIf UCase(c.value) Like "SOLIFENACIN*" Then acb = acb + 3
+    ElseIf UCase(c.value) Like "THIORIDAZINE*" Then acb = acb + 3
+    ElseIf UCase(c.value) Like "TIZANIDINE*" Then acb = acb + 3
+    ElseIf UCase(c.value) Like "TOLTERODINE*" Then acb = acb + 3
+    ElseIf UCase(c.value) Like "TRIFLUOPERAZINE*" Then acb = acb + 3
+    ElseIf UCase(c.value) Like "TRIHEXYPHENIDYL*" Then acb = acb + 3
+    ElseIf UCase(c.value) Like "TRIMIPRAMINE*" Then acb = acb + 3
+    ElseIf UCase(c.value) Like "TROSPIUM*" Then acb = acb + 3
+    ElseIf UCase(c.value) Like "EKLIRA*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "ALFRESED*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "XANAX*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "AUDMONAL*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "ABILIFY*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "SYCREST*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "TENORMIN*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "LIORESAL*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "BETOPTIC*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "DULCOLAX*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "ZYBAN*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "NOYADA*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "CELEBREX*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "ZIRTEK*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "LIBRIUM*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "HYLATON*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "NEORAL*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "CIPRAMIL*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "DALACIN*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "RIVOTRIL*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "MIGRALEVE*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "GALCODEINE*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "NEOCLARITYN*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "GLENSOLUDEX*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "VALIUM*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "LANOXIN*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "RETALZEM*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "ATTIA*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "RYTHMODAN*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "MOTILIUM*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "COMTESS*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "CIPRALEX*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "ARCOXIA*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "PEPCID*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "ABSTRAL*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "TELFAST*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "OLENA*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "MODECATE*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "DALMANE*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "FAVERIN*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "FRUSOL*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "CIDOMYCIN*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "SEEBRI*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "APRESOLINE*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "HYDVENTIA*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "ATROVENT*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "ISOTARD*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "ISOKET*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "TORADOL*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "ZOTON*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "XYZAL*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "CO-CARELDOPA*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "PRIADEL*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "CLARITYN*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "ATIVAN*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "GLUCOPHAGE*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "MAXTREX*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "MEDRONE*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "MAXOLON*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "BETALOC*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "BUCCOLAM*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "ZISPIN*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "SEVREDOL*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "NARAMIG*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "ADIPINE*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "OXYACT*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "INVEGA*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "TAZOCIN*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "MIRAPEXIN*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "DILACORT*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "GALPSEUD*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "RISPERDAL*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "NEUPRO*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "ELDEPRYL*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "LUSTRAL*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "IMIGRAN*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "BRALTUS*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "MOLIPAXIN*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "ADCORTYL*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "DEPAKOTE*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "VANCOCIN*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "SUNVENIZ*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "MAREVAN*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "ZOMIG*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "TEGRETOL*" Then acb = acb + 2
+    ElseIf UCase(c.value) Like "TAGAMET*" Then acb = acb + 2
+    ElseIf UCase(c.value) Like "TENORETIC*" Then acb = acb + 2
+    ElseIf UCase(c.value) Like "HALKID*" Then acb = acb + 2
+    ElseIf UCase(c.value) Like "IMODIUM*" Then acb = acb + 2
+    ElseIf UCase(c.value) Like "ADASUVE*" Then acb = acb + 2
+    ElseIf UCase(c.value) Like "PHYSEPTONE*" Then acb = acb + 2
+    ElseIf UCase(c.value) Like "TRILEPTAL*" Then acb = acb + 2
+    ElseIf UCase(c.value) Like "MEPERIDINE*" Then acb = acb + 2
+    ElseIf UCase(c.value) Like "ORAP*" Then acb = acb + 2
+    ElseIf UCase(c.value) Like "ZANTAC*" Then acb = acb + 2
+    ElseIf UCase(c.value) Like "STANEK*" Then acb = acb + 2
+    ElseIf UCase(c.value) Like "UNIPHYLLIN*" Then acb = acb + 2
+    ElseIf UCase(c.value) Like "ZYDOL*" Then acb = acb + 2
+    ElseIf UCase(c.value) Like "ALLERIEF*" Then acb = acb + 3
+    ElseIf UCase(c.value) Like "LARGACTIL*" Then acb = acb + 3
+    ElseIf UCase(c.value) Like "CLOZARIL*" Then acb = acb + 3
+    ElseIf UCase(c.value) Like "PERIACTIN*" Then acb = acb + 3
+    ElseIf UCase(c.value) Like "EMSELEX*" Then acb = acb + 3
+    ElseIf UCase(c.value) Like "NYTOL*" Then acb = acb + 3
+    ElseIf UCase(c.value) Like "XEPIN*" Then acb = acb + 3
+    ElseIf UCase(c.value) Like "XONVEA*" Then acb = acb + 3
+    ElseIf UCase(c.value) Like "TOVIAZ*" Then acb = acb + 3
+    ElseIf UCase(c.value) Like "URISPAS*" Then acb = acb + 3
+    ElseIf UCase(c.value) Like "BUSCOPAN*" Then acb = acb + 3
+    ElseIf UCase(c.value) Like "METHOTRIMEPRAZINE*" Then acb = acb + 3
+    ElseIf UCase(c.value) Like "ROBAXIN*" Then acb = acb + 3
+    ElseIf UCase(c.value) Like "ZYPREXA*" Then acb = acb + 3
+    ElseIf UCase(c.value) Like "DITROPAN*" Then acb = acb + 3
+    ElseIf UCase(c.value) Like "SEROXAT*" Then acb = acb + 3
+    ElseIf UCase(c.value) Like "KEMADRIN*" Then acb = acb + 3
+    ElseIf UCase(c.value) Like "SOMINEX*" Then acb = acb + 3
+    ElseIf UCase(c.value) Like "PRO-BANTHINE*" Then acb = acb + 3
+    ElseIf UCase(c.value) Like "DETRUNORM*" Then acb = acb + 3
+    ElseIf UCase(c.value) Like "SEROQUEL*" Then acb = acb + 3
+    ElseIf UCase(c.value) Like "VESICARE*" Then acb = acb + 3
+    ElseIf UCase(c.value) Like "DETRUSITOL*" Then acb = acb + 3
+    ElseIf UCase(c.value) Like "STELAZINE*" Then acb = acb + 3
+    ElseIf UCase(c.value) Like "REGURIN*" Then acb = acb + 3
+    ElseIf UCase(c.value) Like "DUAKLIR*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "ITZENAL*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "SPASMONAL*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "LYFLEX*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "CO-TRIAMTERZIDE*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "VANQUORAL*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "ZINDACLIN*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "SOLPADEINE*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "DEXSOL*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "TILDIEM*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "PERSANTIN*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "FENHUMA*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "PROZAC*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "LASIX*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "PLENADREN*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "INHALVENT*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "MODISAL*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "ACULAR*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "SINEMET*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "CAMCOLIT*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "SUKKARTO*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "JYLAMVO*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "SOLU-MEDRONE*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "EPISTATUS*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "ACTIMORPH*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "NIFEDIPRESS*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "IXYLDONE*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "XEPILON*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "PIPEXUS*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "DELTACORTRIL*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "SUDAFED*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "OKEDI*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "CONTULEN*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "ACOPAIR*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "KENALOG*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "BELVO*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "VENLADEX*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "CURATIL*" Then acb = acb + 2
+    ElseIf UCase(c.value) Like "HALDOL*" Then acb = acb + 2
+    ElseIf UCase(c.value) Like "SASTRAVI*" Then acb = acb + 2
+    ElseIf UCase(c.value) Like "ZAMADOL*" Then acb = acb + 2
+    ElseIf UCase(c.value) Like "PIRITON*" Then acb = acb + 3
+    ElseIf UCase(c.value) Like "DENZAPINE*" Then acb = acb + 3
+    ElseIf UCase(c.value) Like "ZECATRIN*" Then acb = acb + 3
+    ElseIf UCase(c.value) Like "KWELLS*" Then acb = acb + 3
+    ElseIf UCase(c.value) Like "NOZINAN*" Then acb = acb + 3
+    ElseIf UCase(c.value) Like "KENTERA*" Then acb = acb + 3
+    ElseIf UCase(c.value) Like "PHENERGAN*" Then acb = acb + 3
+    ElseIf UCase(c.value) Like "ATROLAK*" Then acb = acb + 3
+    ElseIf UCase(c.value) Like "MARIOSEA*" Then acb = acb + 3
+    ElseIf UCase(c.value) Like "GABLOFEN*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "CAPIMUNE*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "EMCOZIN*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "DEXAFREE*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "ZEYAM*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "EFFENTORA*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "PROZEP*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "EFMODY*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "RHINASPRAY*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "RELOSORB*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "CARAMET*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "LI-LIQUID*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "AXPINET*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "NORDIMET*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "MST CONTINUS*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "TENSIPINE*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "LONGTEC*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "BYANNLI*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "PRED FORTE*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "SPIRIVA*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "NASACORT*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "SYONELL*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "VIEPAX*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "BRIMISOL*" Then acb = acb + 2
+    ElseIf UCase(c.value) Like "HAYLEVE*" Then acb = acb + 3
+    ElseIf UCase(c.value) Like "ZAPONEX*" Then acb = acb + 3
+    ElseIf UCase(c.value) Like "TERALEVE*" Then acb = acb + 3
+    ElseIf UCase(c.value) Like "JOY-RIDES*" Then acb = acb + 3
+    ElseIf UCase(c.value) Like "LEVOROL*" Then acb = acb + 3
+    ElseIf UCase(c.value) Like "LYRINEL*" Then acb = acb + 3
+    ElseIf UCase(c.value) Like "AVOMINE *" Then acb = acb + 3
+    ElseIf UCase(c.value) Like "BIQUELLE*" Then acb = acb + 3
+    ElseIf UCase(c.value) Like "NEDITOL*" Then acb = acb + 3
+    ElseIf UCase(c.value) Like "CAPSORIN*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "SOLPADOL*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "DROPODEX*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "ADIZEM*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "ACTIQ*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "SOLU-CORTEF*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "TRANGINA*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "LECADO*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "LISKONUM*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "DIAGEMET*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "ZLATAL*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "MORPHGESIC*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "DEXIPRESS*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "OXELTRA*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "TREVICTA*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "TIOGIVA*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "CONVULEX*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "VENLALIC*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "MAROL*" Then acb = acb + 2
+    ElseIf UCase(c.value) Like "SCOPODERM*" Then acb = acb + 3
+    ElseIf UCase(c.value) Like "VERTIGON*" Then acb = acb + 3
+    ElseIf UCase(c.value) Like "BRANCICO*" Then acb = acb + 3
+    ElseIf UCase(c.value) Like "TOLTERMA*" Then acb = acb + 3
+    ElseIf UCase(c.value) Like "DEXIMUNE*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "ZAPAIN*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "EYETHALM*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "ANGITIL*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "CYNRIL*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "SOFTACORT*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "XISMOX*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "DUODOPA*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "GLUCOREX*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "METHOFILL*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "ZOMORPH*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "VALNI*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "OXYCONTIN*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "SPIOLTO*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "MAJOVEN*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "TILODOL*" Then acb = acb + 2
+    ElseIf UCase(c.value) Like "MINTRELEQ*" Then acb = acb + 3
+    ElseIf UCase(c.value) Like "TOLTHEN*" Then acb = acb + 3
+    ElseIf UCase(c.value) Like "SANDIMMUN*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "CODIPAR*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "MAXIDEX*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "SLOZEM*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "DUROGESIC*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "DERMACORT*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "ELANTAN*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "CO-BENELDOPA*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "METABET*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "METOJECT*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "MXL*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "ADALAT*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "OXYLAN*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "VENCARM*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "TRADOREC*" Then acb = acb + 2
+    ElseIf UCase(c.value) Like "SONDATE*" Then acb = acb + 3
+    ElseIf UCase(c.value) Like "BLERONE*" Then acb = acb + 3
+    ElseIf UCase(c.value) Like "IKERVIS*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "KAPAKE*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "PURADEX*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "VIAZEM*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "FENCINO*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "HC45*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "ISODUR*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "MADOPAR*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "YALTORMIN*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "ORAMORPH*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "ADANIF*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "OXYPRO*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "VENLABLUE*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "TRAMULIEF*" Then acb = acb + 2
+    ElseIf UCase(c.value) Like "ZALURON*" Then acb = acb + 3
+    ElseIf UCase(c.value) Like "PREBLACON*" Then acb = acb + 3
+    ElseIf UCase(c.value) Like "VERKAZIA*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "TYLEX*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "ZEMTARD*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "MATRIFEN*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "MILDISON LIPOCREAM*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "NYZAMAC*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "GLUCIENT*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "NEOZIPINE*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "RELTEBON*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "POLITID*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "MAXITRAM*" Then acb = acb + 2
+    ElseIf UCase(c.value) Like "FORTIPINE*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "CORACTEN*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "NIFEDIPIN-RATIOPHARM*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "MEZOLAR*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "OPIODUR*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "VICTANYL*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "YEMEX*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "PECFENT*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "RENOCONTIN*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "LYNLOR*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "OXYNORM*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "SHORTEC*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "JESACRIN*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "MEIJUMET*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "VENAXX*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "VENLASOV*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "VENSIR*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "VENZIP*" Then acb = acb + 1
+    ElseIf UCase(c.value) Like "EFEXOR*" Then acb = acb + 1
+    End If
+Next
+
+addACBScore = acb
+
+End Function
+
+Sub reindexHorizontalData(indexColNum As Long, dataColNum As Long, dataRepeats As Long, worksheetName As String)
+' By Robert.Brownsmith@nhs.net
+
+'subs with arguments do not show in macro list because no way to supply the arguments. Advise use helper macro to call this one.
+
+  'make declarations
+  Dim ws As Worksheet
+  Dim wb As Workbook
+  Dim rowsUsed As Long
+  
+  '  Initialization
+  Set wb = ActiveWorkbook
+    ' Set wb = ThisWorkbook
+  
+  Set ws = wb.Worksheets(worksheetName)
+  rowsUsed = ws.Cells(ws.Rows.count, "A").end(xlUp).Row
+ 
+  
+  For i = 1 To dataRepeats
+    With ws
+        .Range(Cells(2, (indexColNum + (dataColNum * i) + 1)), Cells(rowsUsed, (indexColNum + (dataColNum * (i + 1))))).Cut _
+            Destination:=ws.Range(Cells((1 + rowsUsed + ((rowsUsed - 1) * (i - 1))), (indexColNum + 1)), Cells((rowsUsed + ((rowsUsed - 1) * i)), (indexColNum + dataColNum)))
+      
+        .Range(Cells(2, 1), Cells(rowsUsed, indexColNum)).Copy _
+            Destination:=ws.Range(Cells((1 + rowsUsed + ((rowsUsed - 1) * (i - 1))), 1), Cells((rowsUsed + (rowsUsed - 1) + ((rowsUsed - 1) * (i - 1))), indexColNum))
+         
+    End With
+  Next i
+    
+   
+    
+  'Remove rows with blanks
+  ws.Columns(indexColNum + 1).SpecialCells(xlCellTypeBlanks).EntireRow.Delete
+  
+  End Sub
+Sub reindexHorizontalDataPrompted()
+' By Robert.Brownsmith@nhs.net
+
+  'make declarations
+  Dim ws As Worksheet
+  Dim wb As Workbook
+  Dim rowsUsed As Long
+  Dim indexColNum As Long
+  Dim dataColNum As Long
+  Dim dataRepeats As Long
+  
+  indexColNum = Application.InputBox("how many index columns?")
+  dataColNum = Application.InputBox("how many columns in each repeat of the data?")
+  dataRepeats = Application.InputBox("how many times does the data repeat?")
+  Set wb = ActiveWorkbook
+    ' Set wb = ThisWorkbook
+  Set ws = wb.ActiveSheet
+      
+  '  Initialization
+  rowsUsed = ws.Cells(ws.Rows.count, "A").end(xlUp).Row
+ 
+  
+  For i = 1 To dataRepeats
+    With ws
+        .Range(Cells(2, (indexColNum + (dataColNum * i) + 1)), Cells(rowsUsed, (indexColNum + (dataColNum * (i + 1))))).Cut _
+            Destination:=ws.Range(Cells((1 + rowsUsed + ((rowsUsed - 1) * (i - 1))), (indexColNum + 1)), Cells((rowsUsed + ((rowsUsed - 1) * i)), (indexColNum + dataColNum)))
+      
+        .Range(Cells(2, 1), Cells(rowsUsed, indexColNum)).Copy _
+            Destination:=ws.Range(Cells((1 + rowsUsed + ((rowsUsed - 1) * (i - 1))), 1), Cells((rowsUsed + (rowsUsed - 1) + ((rowsUsed - 1) * (i - 1))), indexColNum))
+         
+    End With
+  Next i
+    
+   
+    
+  'Remove rows with blanks
+  ws.Columns(indexColNum + 1).SpecialCells(xlCellTypeBlanks).EntireRow.Delete
+  
+  End Sub
