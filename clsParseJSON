@@ -1,0 +1,154 @@
+' Class: JsonParser
+'A class created from code by Daniel Ferry to parse JSON.
+'https://medium.com/swlh/excel-vba-parse-json-easily-c2213f4d8e7a
+
+Option Explicit
+
+Private p As Long
+Private token As Variant
+Private dic As Object
+
+' Initialize the class
+Private Sub Class_Initialize()
+    Set dic = CreateObject("Scripting.Dictionary")
+End Sub
+
+' Parse JSON and return a dictionary object
+Public Function ParseJSON(json As String, Optional key As String = "obj") As Object
+    p = 1
+    token = Tokenize(json)
+    If token(p) = "{" Then
+        ParseObj key
+    Else
+        ParseArr key
+    End If
+    Set ParseJSON = dic
+End Function
+
+' Parse an object
+Private Sub ParseObj(key As String)
+    Do
+        p = p + 1
+        Select Case token(p)
+            Case "]"
+            Case "["
+                ParseArr key
+            Case "{"
+                If token(p + 1) = "}" Then
+                    p = p + 1
+                    dic.Add key, "null"
+                Else
+                    ParseObj key
+                End If
+            Case "}"
+                key = ReducePath(key): Exit Do
+            Case ":"
+                key = key & "." & token(p - 1)
+            Case ","
+                key = ReducePath(key)
+            Case Else
+                If token(p + 1) <> ":" Then dic.Add key, token(p)
+        End Select
+    Loop
+End Sub
+
+' Parse an array
+Private Sub ParseArr(key As String)
+    Dim e As Long
+    Do
+        p = p + 1
+        Select Case token(p)
+            Case "}"
+            Case "{"
+                ParseObj key & ArrayID(e)
+            Case "["
+                ParseArr key
+            Case "]"
+                Exit Do
+            Case ":"
+                key = key & ArrayID(e)
+            Case ","
+                e = e + 1
+            Case Else
+                dic.Add key & ArrayID(e), token(p)
+        End Select
+    Loop
+End Sub
+
+' Tokenize a JSON string
+Private Function Tokenize(s As String) As Variant
+    Const Pattern = """(([^""\\]|\\.)*)""|[+\-]?(?:0|[1-9]\d*)(?:\.\d*)?(?:[eE][+\-]?\d+)?|\w+|[^\s""']+?"
+    Tokenize = RExtract(s, Pattern, True)
+End Function
+
+' Regular expression extraction
+Private Function RExtract(s As String, Pattern As String, Optional bGroup1Bias As Boolean = False, Optional bGlobal As Boolean = True) As Variant
+    Dim c As Long, m, n, v
+    With CreateObject("vbscript.regexp")
+        .Global = bGlobal
+        .MultiLine = False
+        .IgnoreCase = True
+        .Pattern = Pattern
+        If .Test(s) Then
+            Set m = .Execute(s)
+            ReDim v(1 To m.count)
+            For Each n In m
+                c = c + 1
+                v(c) = n.value
+                If bGroup1Bias Then If Len(n.SubMatches(0)) Or n.value = """""" Then v(c) = n.SubMatches(0)
+            Next
+        End If
+    End With
+    RExtract = v
+End Function
+
+' Generate an array index
+Private Function ArrayID(e As Long) As String
+    ArrayID = "(" & e & ")"
+End Function
+
+' Reduce a key path
+Private Function ReducePath(key As String) As String
+    If InStr(key, ".") Then
+        ReducePath = Left(key, InStrRev(key, ".") - 1)
+    Else
+        ReducePath = key
+    End If
+End Function
+
+' List all paths and their values in the dictionary
+Public Sub ListPaths()
+    Dim key As Variant
+    For Each key In dic
+        Debug.Print key & " --> " & dic(key)
+    Next
+End Sub
+
+' Get filtered values based on a key pattern
+Public Function GetFilteredValues(match As String) As Variant
+    Dim filteredValues() As Variant
+    Dim count As Long, key As Variant
+    count = 0
+    For Each key In dic
+        If key Like match Then
+            count = count + 1
+            ReDim Preserve filteredValues(1 To count)
+            filteredValues(count) = dic(key)
+        End If
+    Next
+    GetFilteredValues = filteredValues
+End Function
+
+' Get a filtered table based on column patterns
+Public Function GetFilteredTable(cols As Variant) As Variant
+    Dim i As Long, j As Long, values As Variant, filteredValues As Variant, result() As Variant
+    ReDim result(1 To dic.count, 1 To UBound(cols) + 1)
+    For j = LBound(cols) To UBound(cols)
+        filteredValues = GetFilteredValues(cols(j))
+        For i = LBound(filteredValues) To UBound(filteredValues)
+            result(i, j + 1) = filteredValues(i)
+        Next
+    Next
+    GetFilteredTable = result
+End Function
+
