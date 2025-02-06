@@ -7,7 +7,7 @@ Disclaimer. These functions should be used with professional discretion. They ha
 Please feel free to fork and improve the code.
 
 ## Add-on instructions.
-Download the add-in file and place in a local folder.
+[Download](https://github.com/ROBrownsmith/functionsForPharmacyTeams/raw/refs/heads/main/Functions%20for%20Pharmacy%20teams.xlam) the add-in file and place in a local folder.
 
 If Developer tab is not available in the ribbon then:
 
@@ -17,7 +17,7 @@ then
 
 Excel Add-ins/browse/select add-in file. 
 
-Restart.
+Restart Excel.
 
 
 ## There are some simple user-defined functions in the module, and some classes.
