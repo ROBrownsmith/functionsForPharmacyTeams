@@ -57,7 +57,7 @@ Calculates the Anticholinergic Effect on Cognition (AEC) score based on the form
 
 List from https://www.acbcalc.com/medicines
 
-Augmented with brand synonyms from BNF.
+Augmented with brand synonyms from the [BNF](www.medicinescomplete.com).
 
 note - no score for dosulepin, lofepramine, prochlorperazine, promazine, amiodarone, sertindole
 
@@ -111,7 +111,7 @@ Becomes:
 
 **FHIRDosage**(doseInstruction As Range)
 
-Uses clsDosage to return a FHIR STU3 compatible JSON.
+Uses clsDosage to return a [FHIR STU3](https://hl7.org/fhir/STU3/dosage.html) compatible JSON. This is a standard identified by [NHS Digital](https://nhsconnect.github.io/Dose-Syntax-Implementation/index.html).
 
 
 **scriptDurationInDays**(doseInstruction As Range, scriptQuantity As Range)
@@ -134,7 +134,7 @@ Aims to convert a dose-instruction string to a FHIR STU3 compatible JSON
 
 https://hl7.org/fhir/STU3/dosage.html
 
-This interprets/parses the dose instruction string and returns the concepts as structured data. The Route, Site, and asNeededCodeableConcept properties are not fully implemented because they contain over 1000 possible snomed codes. It may need an API call in order to implement properly.
+This interprets/parses the dose instruction string and returns the concepts as structured data. The Route, Site, and asNeededCodeableConcept properties are not fully implemented because they contain over 1000 possible snomed codes. It may need an API call in order to implement properly. Could possibly be useful to create data to train an AI.
 
 <ins> Class Method(s): </ins>
 
@@ -143,8 +143,11 @@ FHIR3JSONConvertedFrom(doseString As String) As String
 
 **clsDoseProcessor**
 
-A suite to    -work out a prescription duration, given dose and quantity.
-              -work out the morphine dose equivalent per day, given the dose and product description of an opioid. Methadone is not supported and will result in an error.
+A suite utilising clsDosage and clsParseJSON to    
+
+-work out a prescription duration, given dose and quantity.
+              
+-work out the morphine dose equivalent per day, given the dose and product description of an opioid. Methadone is not supported and will result in an error.
 
 <ins> Class Method(s): </ins>
 
