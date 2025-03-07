@@ -48,7 +48,7 @@ Private Type coding
     display As String
 End Type
 
-'code - defined set of values in FIHR
+'code - defined set of values in FHIR
 
 'https://hl7.org/fhir/valueset-units-of-time.html
 Enum unitsOfTime
@@ -230,6 +230,27 @@ Private Sub setSiteAs(display As String, Optional code As String)
 'has more than 1000 codes. dict might not be best way. get direct from snomed??
 
 'common sites are: ...
+'Both eyes -  40638003
+'Entire right eye proper - 1290043002
+'Entire left eye proper -  1290041000
+'should be conjunctiva of left eye?
+'affected eye - no code, affected area, affected site - 22201000087104
+'Eyelid - 80243003
+'Upper eyelid - 38934000
+'lower eyelid -  62736007
+'Left upper eyelid - 65820005
+'Right upper eyelid - 62290000
+'Left lower eyelid - 76662006
+'Right lower eyelid - 20060009
+'right ear - 25577004
+'left ear - 89644007
+'both ears - 34338003
+'affected ears - no code
+'sides of nose - no code
+'each nostril - no code
+'affected nostril - no code
+'Right nostril - 723609004
+'Left nostril - 723608007
 
 dosage.site.system = "http://snomed.info/sct"
 dosage.site.display = display
@@ -560,7 +581,7 @@ End Sub
 
 '<--------------------------- JSON helpers -------------------------------------->
 'todo
-'private function output FIHR dosage as xml
+'private function output FHIR dosage as xml
 
 Private Function JSONDosage() As String
 'dosage.patientInstruction = "barfoo"
@@ -1057,7 +1078,7 @@ End Function
 
 Private Function JSONCode() As String
 'setTimingCodeAs (BED)
-    If dosage.eTiming.code.display = "" Then
+    If dosage.eTiming.code.display = "" Or dosage.eTiming.repeat.timeOfDay(0) > DateValue("01/01/1800") Then
         JSONCode = ""
     Else
         JSONCode = """code"": {""system"":""" & dosage.eTiming.code.system & _
@@ -1284,12 +1305,14 @@ doseString = regexReplace(doseString, "(\s\d\s)X\s|(\s\d)X\s", "$1$2 TIMES ")   
 doseString = regexReplace(doseString, "(?:^|[^\d])\sX\s?\d", "$1 FOR ")         'change erratic use of X for FOR [regex lookbehind not supported]
 doseString = regexReplace(doseString, "\b(\w+)\b(?:[\s\p{P}]*\1\b)+", "$1")     'remove consecutive repeated words
 doseString = Replace(doseString, "UPTO", "UP TO")                               'correct spelling of "up to"
+doseString = Replace(doseString, "INSTIL ", "INSTILL ")                         'correct spelling of "Instill"
 doseString = Replace(doseString, "(TYP=A)", "")                                 'remove legacy software indicators
 doseString = Replace(doseString, "(TYP=R)", "")
 doseString = Replace(doseString, "1TO 2", "1 TO 2")                             'remove inconsistent spaces
 doseString = Replace(doseString, "1 TO2", "1 TO 2")
 doseString = Replace(doseString, "1OR 2", "1 OR 2")
 doseString = Replace(doseString, "1 OR2", "1 OR 2")
+doseString = Replace(doseString, ",", ", ")                                     'ensure space after comma
 doseString = regexReplace(doseString, "\s{2,20}", " ")                          'remove multiple spaces and replace with one space
                                                                                 '#x#?
                                                                                 'MLS to ML?
@@ -1384,8 +1407,8 @@ Call parseStringByDoseUnit(doseString)
 Call parseStringByDoseMeasurement(doseString)
 Call parseStringByDividedDay(doseString)
 Call parseStringByTiming(doseString)
-Call parseStringByFIHRLatinWhen(doseString)
-Call parseStringByFIHRLatinCode(doseString)
+Call parseStringByFHIRLatinWhen(doseString)
+Call parseStringByFHIRLatinCode(doseString)
 Call parseStringCommonLatin(doseString)
 Call parseStringByDayOfWeek(doseString)
 Call parseStringForPRN(doseString)
@@ -1395,6 +1418,7 @@ Call parseStringForMaximum(doseString)
 Call parseStringForDuration(doseString)
 Call parseStringForReason(doseString)
 Call parseStringForTimeOfDay(doseString)
+Call parseStringForSite(doseString)
 End Sub
 Private Sub parseStringForMaximum(doseString As String)
 'Max,maximum, no more than, up to, do not take more than, not more than
@@ -1816,7 +1840,7 @@ End If
 Select Case True
        
     '~take half - one
-    Case doseString Like "*HALF - ONE*"
+    Case doseString Like "*HALF - ONE*", doseString Like "*HALF A TABLET - ONE TABLET*"
         doseRangeSpecified = True
         setDoseRangeLowAs 0.5, unit, code, system
         setDoseRangeHighAs 1, unit, code, system
@@ -1825,7 +1849,7 @@ Select Case True
     Case doseString Like "*ONE [TO][OR] TWO *", _
         doseString Like "*1 [TO][OR] 2*", _
         doseString Like "*ONE - TWO*", _
-        doseString Like "*1 - 2*" And Not doseString Like "*1 - 2 DAYS*"
+        doseString Like "*1 - 2*" And Not doseString Like "*1 - 2 DAYS*" And Not doseString Like "*1 - 2 TIME*"
         'doseString Like "1[ TO][TOR][ 2OR][2 ]*"
         'doseString Like "1[ -][-2 ][2 ]*", _
         'doseString Like "*1-2*", _
@@ -1865,7 +1889,7 @@ Select Case True
         setDoseRangeHighAs 4, unit, code, system
         
     '~3-4
-    Case doseString Like "3 - 4*", doseString Like "TAKE 3 TO 4*"
+    Case doseString Like "3 - 4*" And Not doseString Like "3 - 4 TIME*", doseString Like "TAKE 3 TO 4*"
         doseRangeSpecified = True
         setDoseRangeLowAs 3, unit, code, system
         setDoseRangeHighAs 4, unit, code, system
@@ -1894,11 +1918,14 @@ Select Case True
             setDoseQuantityAs 0.5, unit, code, system
         
     '~take 1
-    Case doseString Like "*1 ?[!RO]*" And doseRangeSpecified = False, _
+    Case doseString Like "*1 ?[!RO]*" And doseRangeSpecified = False And Not doseString Like "*1 - # TIME*", _
         doseString Like "*ONE ?[!RO]*" And doseRangeSpecified = False And Not doseString Like "*ONE AND A HALF*", _
+        doseString Like "*ONE DROP*", _
         doseString Like "*1[ QTBO][QTBOD][!R]*" And doseRangeSpecified = False, _
         doseString Like "TAKE ONE*" And doseRangeSpecified = False And Not doseString Like "*ONE AND A HALF*", _
         doseString Like "INHALE ONE*" And doseRangeSpecified = False, _
+        doseString Like "APPLY ONE*" And doseRangeSpecified = False, _
+        doseString Like "APPLY 1*" And doseRangeSpecified = False, _
         doseString Like "ONE *" And doseRangeSpecified = False, _
         doseString Like "ONE, *" And doseRangeSpecified = False, _
         doseString Like "1*" And doseRangeSpecified = False And Not doseString Like "*1.*"
@@ -1912,20 +1939,22 @@ Select Case True
         setDoseQuantityAs 1.5, unit, code, system
         
     '~take 2
-    Case doseString Like "*TWO*" And doseRangeSpecified = False, _
+    Case doseString Like "*TWO*" And doseRangeSpecified = False And Not doseString Like "*EVERY TWO*", _
         doseString Like "*2 [BTQ]D*" And doseRangeSpecified = False, _
         doseString Like "*2[BTQ]D*" And doseRangeSpecified = False, _
         doseString Like "*2[A-GI-Z] *" And doseRangeSpecified = False, _
         doseString Like "2PUF*" And doseRangeSpecified = False, _
         doseString Like "2 *" And doseRangeSpecified = False, _
-        doseString Like "*TAKE 2*" And doseRangeSpecified = False And Not doseString Like "*TAKE 2.*"
+        doseString Like "*TAKE 2*" And doseRangeSpecified = False And Not doseString Like "*TAKE 2.*", _
+        doseString Like "*INHALE 2*" And doseRangeSpecified = False And Not doseString Like "*TAKE 2.*", _
+        doseString Like "*APPLY 2*" And doseRangeSpecified = False And Not doseString Like "*TAKE 2.*"
             setDoseQuantityAs 2, unit, code, system
         'doseString Like "*[!1]2[!.45-]*" And doseRangeSpecified = False, _
 
         'Debug.Print "2 detected", unit
         
     '~ take 3
-    Case doseString Like "3 *" And doseRangeSpecified = False, _
+    Case doseString Like "3 *" And doseRangeSpecified = False And Not doseString Like "3 - 4 TIME*" And Not doseString Like "3 TIME*", _
         doseString Like "THREE*" And doseRangeSpecified = False And Not doseString Like "THREE TIME*", _
         doseString Like "TAKE 3*" And doseRangeSpecified = False, _
         doseString Like "TAKE THREE*" And doseRangeSpecified = False, _
@@ -2040,7 +2069,7 @@ End Sub
 Private Sub parseStringByDividedDay(doseString As String)
 'timing by divided day
 Select Case True
-    Case doseString Like "*[!RO-] 6 TIME*", doseString Like "*[!RO-] SIX TIME*"
+    Case doseString Like "*[!RO-] 6 TIME*", doseString Like "*[!RO-] SIX TIME*", doseString Like "6 TIME*"
         dosage.eTiming.repeat.frequency = 6
         dosage.eTiming.repeat.period = 1
         dosage.eTiming.repeat.periodUnit = d
@@ -2050,18 +2079,18 @@ Select Case True
         dosage.eTiming.repeat.periodUnit = d
     Case doseString Like "*[!RO-] 4 TIME*", _
         doseString Like "*[!RO-] FOUR TIME*", _
-        doseString Like "* 4 TIME*" And Not doseString Like "*TO 4 TI*" And Not doseString Like "*UP[T ][TO][ O]*", _
+        doseString Like "* 4 TIME*" And Not doseString Like "*TO 4 TI*" And Not doseString Like "*UP[T ][TO][ O]*" And Not doseString Like "* - 4 TIME*", _
         doseString Like "*FOUR TIME*" And Not doseString Like "*TO FOUR TI*" And Not doseString Like "*UP[T ][TO][ O]*"
         'Debug.Print "four times a day detected"
         dosage.eTiming.repeat.frequency = 4
         dosage.eTiming.repeat.period = 1
         dosage.eTiming.repeat.periodUnit = d
-    Case doseString Like "*[!RO-] 3 TIME*", _
-        doseString Like "*THREE TIME*" And Not doseString Like "* OR THREE TIME*" And Not doseString Like "*TO THREE TIME*"
+    Case doseString Like "*3 TIME*" And Not doseString Like "* OR 3 TIME*" And Not doseString Like "*TO 3 TIME*" And Not doseString Like "*- 3 TIME*", _
+        doseString Like "*THREE TIME*" And Not doseString Like "* OR THREE TIME*" And Not doseString Like "*TO THREE TIME*" And Not doseString Like "*- THREE TIME*"
             dosage.eTiming.repeat.frequency = 3
             dosage.eTiming.repeat.period = 1
             dosage.eTiming.repeat.periodUnit = d
-    Case doseString Like "*3 - 4 TIMES A DAY*"
+    Case doseString Like "*3 - 4 TIMES A DAY*", doseString Like "*3 - 4 TIMES DAILY*", doseString Like "*3 - 4 TIMES/DAY*"
         dosage.eTiming.repeat.frequency = 3
         dosage.eTiming.repeat.frequencyMax = 4
         dosage.eTiming.repeat.period = 1
@@ -2078,6 +2107,11 @@ Select Case True
             dosage.eTiming.repeat.frequency = 2
             dosage.eTiming.repeat.period = 1
             dosage.eTiming.repeat.periodUnit = d
+    Case doseString Like "*ONCE OR TWICE A DAY*", doseString Like "*ONCE OR TWICE DAILY*", doseString Like "* 1 - 2 TIMES [AD][ DA][DI]*"
+        dosage.eTiming.repeat.frequency = 1
+        dosage.eTiming.repeat.frequencyMax = 2
+        dosage.eTiming.repeat.period = 1
+        dosage.eTiming.repeat.periodUnit = d
     Case doseString Like "**ONCE [AD][ DA][DI]*", _
         doseString Like "*EVERY DAY*", _
         doseString Like "# A DAY*", _
@@ -2126,18 +2160,23 @@ Select Case True
         doseString Like "*4 TO 6 H[OR][LUS ]*", _
         doseString Like "*4 - 6 H[OR][LUS ]*"
             dosage.eTiming.repeat.frequency = 1
-            dosage.eTiming.repeat.period = 4
-            dosage.eTiming.repeat.periodMax = 6
-            dosage.eTiming.repeat.periodUnit = h ' broken by "Every 4-6 Hours Up To Four Times A Day"
+            dosage.eTiming.repeat.period = 4        'Seems initially counterintuitive. periodMax is a lower frequency but refers
+            dosage.eTiming.repeat.periodMax = 6     'to the period. see https://hl7.org/fhir/STU3/datatypes.html#Timing
+            dosage.eTiming.repeat.periodUnit = h    ' broken by "Every 4-6 Hours Up To Four Times A Day"
+    Case doseString Like "*3 - 4 H[OR][LUS ]*"
+        dosage.eTiming.repeat.frequency = 1
+        dosage.eTiming.repeat.period = 3
+        dosage.eTiming.repeat.periodMax = 4
+        dosage.eTiming.repeat.periodUnit = h
     Case doseString Like "*[!-O] FOUR[ H][HOR][ROLUS ]*", _
         doseString Like "*[!-O] 4[ H][HOR][ROLUS ]*" And Not doseString Like "*MAX*4[ H][HOR][ROLUS ]*"
             dosage.eTiming.repeat.frequency = 1
             dosage.eTiming.repeat.period = 4
             dosage.eTiming.repeat.periodUnit = h
-    Case doseString Like "*[!-O] 2[ H][HOR][ROLUS ]*"
+    Case doseString Like "*[!-O] 2[ H][HOR][ROLUS ]*", doseString Like "*[!-O] TWO [ H][HOR][ROLUS ]*", doseString Like "2[ H][HOR][ROLUS ]*"
         dosage.eTiming.repeat.frequency = 1
-            dosage.eTiming.repeat.period = 2
-            dosage.eTiming.repeat.periodUnit = h
+        dosage.eTiming.repeat.period = 2
+        dosage.eTiming.repeat.periodUnit = h
     Case doseString Like "*EVERY HOUR*"
         dosage.eTiming.repeat.frequency = 1
         dosage.eTiming.repeat.period = 1
@@ -2254,7 +2293,7 @@ End Select
 
 ' set duration and durationmax rather than boundsrange? not clear from NHSD examples
 ' boundsRange makes sense if it is a whole course (Abx / steroids). Difficult to use if "up to 4 days": set low to 0
-' duration seems to apply to the time of dose according to FIHR.
+' duration seems to apply to the time of dose according to FHIR.
 ' edge cases??? tranexamic, pill, titration 5mg for 2 weeks then 10mg for 2 weeks, leave on for 5 minutes ???
 
 Select Case True
@@ -2368,8 +2407,8 @@ Next
 
 End Sub
 
-Private Sub parseStringByFIHRLatinWhen(doseString As String)
-'timing by FIHR "latin" code - when
+Private Sub parseStringByFHIRLatinWhen(doseString As String)
+'timing by FHIR "latin" code - when
 
 Dim minuteOffset As Integer
 
@@ -2519,7 +2558,7 @@ Select Case True
 End Select
 'NIGHT
 Select Case True
-    Case doseString Like "*NIGHT*" And Not doseString Like "* BEDTIME*"
+    Case doseString Like "*NIGHT*" And Not doseString Like "* BEDTIME*" And Not doseString Like "*FORTNIGHT*"
         dosage.eTiming.repeat.when(25) = NIGHT
         'Debug.Print "night"
 End Select
@@ -2539,8 +2578,8 @@ End Select
     
     
 End Sub
-Private Sub parseStringByFIHRLatinCode(doseString As String)
-'timing by FIHR "latin" code - code
+Private Sub parseStringByFHIRLatinCode(doseString As String)
+'timing by FHIR "latin" code - code
 Select Case True
     Case doseString Like "*BID*"
         setTimingCodeAs (BID)
@@ -2607,7 +2646,7 @@ Select Case True
         'dosage.eTiming.repeat.periodUnit = d
         dosage.eTiming.repeat.when(0) = NOON
     'BD, B.D. , twice a day
-    Case doseString Like "*#BD", doseString Like "*#B.D.", doseString Like "* B.D.*", doseString Like "* BD*"
+    Case doseString Like "*#BD", doseString Like "*#B.D.", doseString Like "* B.D.*", doseString Like "* BD*", doseString Like "BD"
         dosage.eTiming.repeat.frequency = 2
         dosage.eTiming.repeat.period = 1
         dosage.eTiming.repeat.periodUnit = d
@@ -2688,18 +2727,27 @@ Dim dict As Object
         'panic attack 225624000
         'high temp 50177009 | Body temperature above reference range
         'agitation 24199005 | Feeling agitated (finding) |
-
+        'allergy 609328004
+        'Cough 49727002
+        'Shortness of breath 267036007
+        'Hayfever 21719001
 
 Set dict = CreateObject("Scripting.Dictionary")
 If Not dict.Exists(key) Then
-    dict.Add "22253000", "PAIN"
-    dict.Add "422587007", "NAUSEA"
-    dict.Add "399153001", "VERTIGO"
-    dict.Add "118190003", "SLEEP"
-    dict.Add "48694002", "ANXIETY"
-    dict.Add "225624000", "PANIC ATTACK"
-    dict.Add "50177009", "HIGH TEMP"
-    dict.Add "24199005", "AGITATION"
+    dict.Add "22253000", "Pain"
+    dict.Add "422587007", "Nausea"
+    dict.Add "399153001", "Vertigo"
+    dict.Add "118190003", "Sleep"
+    dict.Add "48694002", "Anxiety"
+    dict.Add "225624000", "Panic attack"
+    dict.Add "50177009", "High temp"
+    dict.Add "24199005", "Agitation"
+    dict.Add "609328004", "Allergy"
+    dict.Add "49727002", "Cough"
+    dict.Add "267036007", "Shortness of breath"
+    dict.Add "21719001", "Hayfever"
+    dict.Add "418290006", "Itch"
+    dict.Add "162290004", "Dry eyes"
 End If
 
 arrItems = dict.Items
@@ -3116,7 +3164,7 @@ Next i
 'Debug.Print listOfTimes, arrayOfTimes(0)
 End Sub
 
-Sub parseStringForReason(doseString As String) 'not strictly FIHR3. Sub to assign indication if given to patientInstruction
+Sub parseStringForReason(doseString As String) 'not strictly FHIR3. Sub to assign indication if given to patientInstruction
 Dim noOtherReasonToUseFOR As Boolean
 Dim partialString As String
 
@@ -3137,6 +3185,54 @@ End If
 If Len(dosage.patientInstruction) = 0 And Not partialString Like "*)*" Then
     dosage.patientInstruction = partialString
 End If
+
+End Sub
+
+Sub parseStringForSite(doseString As String)
+
+'Both eyes -  40638003
+'Entire right eye proper - 1290043002
+'Entire left eye proper -  1290041000
+'should be conjunctiva of left eye?
+'affected eye - no code, affected area, affected site - 22201000087104
+'Eyelid - 80243003
+'Upper eyelid - 38934000
+'lower eyelid -  62736007
+'Left upper eyelid - 65820005
+'Right upper eyelid - 62290000
+'Left lower eyelid - 76662006
+'Right lower eyelid - 20060009
+'right ear - 25577004
+'left ear - 89644007
+'both ears - 34338003
+'affected ears - no code
+'sides of nose - no code
+'each nostril - no code
+'affected nostril - no code
+'Right nostril - 723609004
+'Left nostril - 723608007
+'Thigh - 68367000
+
+Select Case True
+    Case doseString Like "*BOTH EYE*", doseString Like "*EACH EYE*", doseString Like "* BE *" And Not doseString Like "* BE [GUTI]*", doseString Like "* BE" 'not to be taken etc
+        setSiteAs "Both eyes", "40638003"
+    Case doseString Like "* RIGHT EYE *", doseString Like "* RE[, ]*", doseString Like "* RIGHT EYE", doseString Like "* RE"
+        setSiteAs "Entire right eye proper", "1290043002"
+    Case doseString Like "* LEFT EYE *", doseString Like "* LE *", doseString Like "* LEFT EYE", doseString Like "* LE"
+        setSiteAs "Entire left eye proper", "1290041000"
+    Case doseString Like "* RIGHT EAR *", doseString Like "* RIGHT EAR", doseString Like "* R EAR*", doseString Like "* RT EAR*"
+        setSiteAs "Right ear", "25577004"
+    Case doseString Like "* LEFT EAR *", doseString Like "* LEFT EAR", doseString Like "LEFT EAR*"
+        setSiteAs "Left ear", "89644007"
+    Case doseString Like "*BOTH EAR*", doseString Like "*EACH EAR*"
+        setSiteAs "Both ears", "34338003"
+    Case doseString Like "*RIGHT NOSTRIL*"
+        setSiteAs "Right nostril", "723609004"
+    Case doseString Like "*LEFT NOSTRIL*"
+        setSiteAs "Left nostril", "723608007"
+    Case doseString Like "*THIGH*"
+        setSiteAs "Thigh", "68367000"
+End Select
 
 End Sub
 '<-------------------------- Parsing Helper functions----------------------------------->
@@ -3350,4 +3446,4 @@ Set patterns = Nothing
 
 End Function
 
-                       
+
