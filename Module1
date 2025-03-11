@@ -1,6 +1,6 @@
-Function FHIRDosage(doseInstruction As Range)
+Function FIHRDosage(doseInstruction As Range)
 Dim dz As New clsDosage
-FHIRDosage = dz.FHIR3JSONConvertedFrom(doseInstruction.Value2)
+FIHRDosage = dz.FHIR3JSONConvertedFrom(doseInstruction.Value2)
 End Function
 
 Function scriptDurationInDays(doseInstruction As Range, scriptQuantity As Range)
@@ -915,3 +915,6 @@ Sub reindexHorizontalDataPrompted()
   ws.Columns(indexColNum + 1).SpecialCells(xlCellTypeBlanks).EntireRow.Delete
   
   End Sub
+
+
+
