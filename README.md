@@ -134,7 +134,7 @@ Aims to convert a dose-instruction string to a FHIR STU3 compatible JSON
 
 https://hl7.org/fhir/STU3/dosage.html
 
-This interprets/parses the dose instruction string and returns the concepts as structured data. The Route, Site, and asNeededCodeableConcept properties are not fully implemented because they contain over 1000 possible snomed codes. It may need an API call in order to implement properly. Could possibly be useful to create data to train an AI.
+This interprets/parses the dose instruction string and returns the concepts as structured data. The Route, Site, and asNeededCodeableConcept properties are not fully implemented because they contain over 1000 possible snomed codes. It may need an API call in order to implement properly. Could possibly be useful to create data to train an AI. Duration.start and duration.end are not yet implemented either. The function can successfully convert just over 80% of the dose strings in the test document.
 
 <ins> Class Method(s): </ins>
 

@@ -1,3 +1,8 @@
+'class Dose Processor
+'by Robert.Brownsmith@nhs.net
+'A suite of functions to    -work out a prescription duration, given dose and quantity.
+'                           -work out the morphine dose equivalent per day, given the dose and product description.
+
 Private Type strengthPerUnit
     numeratorValue As Double
     numeratorUnit As String
@@ -15,11 +20,11 @@ Dim doseDic As Object
 
 Set parser = New clsParseJSON
 Set converter = New clsDosage
-doseJSON = converter.convertDoseStringToFHIR3JSON(doseStr)
+doseJSON = converter.FHIR3JSONConvertedFrom(doseStr)
 'Debug.Print doseJSON
 Set doseDic = parser.ParseJSON(doseJSON)
 
-parser.ListPaths
+'parser.ListPaths
 
 Select Case True
     Case doseDic("obj.dosageInstruction(0).timing.repeat.when(0)") = "IMD" And _
@@ -241,7 +246,7 @@ End If
    
 End Function
 
-Function mdeConversionFactorOf(formDesc As String) As Double
+Private Function mdeConversionFactorOf(formDesc As String) As Double
 ' By Robert.Brownsmith@nhs.net
 
     'Discern which opioid and set conversion factor.

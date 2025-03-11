@@ -915,3 +915,6 @@ Sub reindexHorizontalDataPrompted()
   ws.Columns(indexColNum + 1).SpecialCells(xlCellTypeBlanks).EntireRow.Delete
   
   End Sub
+
+
+
