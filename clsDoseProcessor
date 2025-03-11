@@ -1,8 +1,3 @@
-'class Dose Processor
-'by Robert.Brownsmith@nhs.net
-'A suite of functions to    -work out a prescription duration, given dose and quantity.
-'                           -work out the morphine dose equivalent per day, given the dose and product description.
-
 Private Type strengthPerUnit
     numeratorValue As Double
     numeratorUnit As String
@@ -12,6 +7,7 @@ End Type
 
 
 Public Function scriptDurationIs(doseStr As String, scriptQuant As Double) As Double
+' By Robert.Brownsmith@nhs.net
 Dim parser As clsParseJSON
 Dim converter As clsDosage
 Dim doseJSON As String
@@ -19,11 +15,11 @@ Dim doseDic As Object
 
 Set parser = New clsParseJSON
 Set converter = New clsDosage
-doseJSON = converter.FHIR3JSONConvertedFrom(doseStr)
+doseJSON = converter.convertDoseStringToFHIR3JSON(doseStr)
 'Debug.Print doseJSON
 Set doseDic = parser.ParseJSON(doseJSON)
 
-'parser.ListPaths
+parser.ListPaths
 
 Select Case True
     Case doseDic("obj.dosageInstruction(0).timing.repeat.when(0)") = "IMD" And _
@@ -45,6 +41,7 @@ End Select
 End Function
 
 Public Function morphineDoseEquivalentOf(doseStr As String, formDesc As String) 'As Double
+' By Robert.Brownsmith@nhs.net
 Dim parser As clsParseJSON
 Dim converter As clsDosage
 Dim doseJSON As String
@@ -62,7 +59,7 @@ Set converter = New clsDosage
 
 formStrength = extractedStrength(formDesc)
 conversionFactor = mdeConversionFactorOf(formDesc)
-doseJSON = converter.FIHR3JSONConvertedFrom(doseStr)
+doseJSON = converter.FHIR3JSONConvertedFrom(doseStr)
 Set doseDic = parser.ParseJSON(doseJSON)
 
 'comment in as needed for debug
@@ -244,7 +241,9 @@ End If
    
 End Function
 
-Private Function mdeConversionFactorOf(formDesc As String) As Double
+Function mdeConversionFactorOf(formDesc As String) As Double
+' By Robert.Brownsmith@nhs.net
+
     'Discern which opioid and set conversion factor.
 
 'https://www.fpm.ac.uk/opioids-aware-structured-approach-opioid-prescribing/dose-equivalents-and-changing-opioids
@@ -367,7 +366,8 @@ Select Case True
 End Function
 
 Private Function extractedStrength(formDesc As String) As strengthPerUnit
-    
+' By Robert.Brownsmith@nhs.net
+
 Dim strPattern As String
 Dim strInput As String
 Dim strReplace As String

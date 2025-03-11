@@ -1,7 +1,4 @@
 ' Class: JsonParser
-'A class created from code by Daniel Ferry to parse JSON.
-'https://medium.com/swlh/excel-vba-parse-json-easily-c2213f4d8e7a
-
 Option Explicit
 
 Private p As Long
