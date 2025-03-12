@@ -632,22 +632,18 @@ Dim listOfSlots As String
 
 'Call setAdditionalInstructionAs(0, "foobar", "1234")
 
-'Debug.Print dosage.additionalInstruction(0).code
-'Debug.Print dosage.additionalInstruction(0).display
-'Debug.Print dosage.additionalInstruction(0).system
-'Debug.Print UBound(dosage.additionalInstruction)
-
 For slot = 0 To UBound(dosage.additionalInstruction)
     If Len(dosage.additionalInstruction(slot).code) > 0 Then
-        listOfSlots = "{""system"": """ & dosage.additionalInstruction(slot).system & """, ""code"":""" & _
-        dosage.additionalInstruction(slot).code & """, ""display"":""" & _
+        listOfSlots = "{""system"": """ & dosage.additionalInstruction(slot).system & """, ""code"": """ & _
+        dosage.additionalInstruction(slot).code & """, ""display"": """ & _
         dosage.additionalInstruction(slot).display & """}" & ", " & listOfSlots
     End If
 Next slot
 
 'JSONadditionalInstruction = Join(dosage.additionalInstruction, ",") 'join wont work on a private type, but cant use public type in a class module.
-JSONadditionalInstruction = Replace(listOfSlots, ", ", "")
-JSONadditionalInstruction = """additionalInstruction"":[" & JSONadditionalInstruction & "], "
+
+JSONadditionalInstruction = """additionalInstruction"":[" & listOfSlots & "], "
+JSONadditionalInstruction = Replace(JSONadditionalInstruction, "}, ]", "}]")
 'Debug.Print JSONadditionalInstruction
 
 If JSONadditionalInstruction = """additionalInstruction"":[], " Then
@@ -971,7 +967,7 @@ Dim listOfSlots As String
 
 For slot = UBound(dosage.eTiming.repeat.timeOfDay) To 0 Step -1
     If dosage.eTiming.repeat.timeOfDay(slot) > DateValue("01/01/1800") Then 'workaround default date is set with parse private function
-        listOfSlots = dosage.eTiming.repeat.timeOfDay(slot) & ", " & listOfSlots
+        listOfSlots = """" & dosage.eTiming.repeat.timeOfDay(slot) & """" & ", " & listOfSlots
     End If
 Next slot
 
