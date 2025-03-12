@@ -19,6 +19,7 @@ Excel Add-ins/browse/select add-in file.
 
 Restart Excel.
 
+You may need to unblock the add in if you get an "this file type is not supported in protected view" error: Follow the instructions from microsoft to unblock [here.](https://answers.microsoft.com/en-us/msoffice/forum/all/excel-error-this-file-type-is-not-supported-in/f8fc839e-a4fa-4625-8f1c-5fa9f68c98a0)
 
 ## There are some simple user-defined functions in the module, and some classes.
 
