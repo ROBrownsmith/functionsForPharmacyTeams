@@ -46,7 +46,6 @@ End Select
 End Function
 
 Public Function morphineDoseEquivalentOf(doseStr As String, formDesc As String) 'As Double
-' By Robert.Brownsmith@nhs.net
 Dim parser As clsParseJSON
 Dim converter As clsDosage
 Dim doseJSON As String
@@ -84,6 +83,8 @@ Select Case True
         If doseDic("obj.dosageInstruction(0).timing.repeat.frequencyMax") > 0 Then
             timesPerDay = doseDic("obj.dosageInstruction(0).timing.repeat.frequencyMax") / _
                 doseDic("obj.dosageInstruction(0).timing.repeat.period")
+        ElseIf doseDic("obj.dosageInstruction(0).timing.repeat.period") = "7" And doseDic("obj.dosageInstruction(0).timing.repeat.frequency") = "1" Then
+            timesPerDay = 1
         Else
             timesPerDay = doseDic("obj.dosageInstruction(0).timing.repeat.frequency") / _
                 doseDic("obj.dosageInstruction(0).timing.repeat.period")
@@ -111,12 +112,14 @@ Select Case True
     
     Case doseDic("obj.dosageInstruction(0).doseQuantity.unit") = "Unit dose", _
         doseDic("obj.dosageInstruction(0).doseQuantity.unit") = "Capsule", _
-        doseDic("obj.dosageInstruction(0).doseQuantity.unit") = "Tablet"
+        doseDic("obj.dosageInstruction(0).doseQuantity.unit") = "Tablet", _
+        doseDic("obj.dosageInstruction(0).doseQuantity.unit") = "Patch"
             mgPerDay = timesPerDay * doseDic("obj.dosageInstruction(0).doseQuantity.value") * _
                 formStrength.numeratorValue
     Case doseDic("obj.dosageInstruction(0).doseRange.high.unit") = "Unit dose", _
         doseDic("obj.dosageInstruction(0).doseRange.high.unit") = "Capsule", _
-        doseDic("obj.dosageInstruction(0).doseRange.high.unit") = "Tablet"
+        doseDic("obj.dosageInstruction(0).doseRange.high.unit") = "Tablet", _
+        doseDic("obj.dosageInstruction(0).doseQuantity.unit") = "Patch"
             mgPerDay = timesPerDay * doseDic("obj.dosageInstruction(0).doseRange.high.value") * _
                 formStrength.numeratorValue
     Case doseDic("obj.dosageInstruction(0).doseQuantity.unit") = "millilitre"
@@ -245,7 +248,6 @@ End If
 
    
 End Function
-
 Private Function mdeConversionFactorOf(formDesc As String) As Double
 ' By Robert.Brownsmith@nhs.net
 
