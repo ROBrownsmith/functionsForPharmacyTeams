@@ -876,7 +876,7 @@ Sub reindexHorizontalData(indexColNum As Long, dataColNum As Long, dataRepeats A
   ws.Columns(indexColNum + 1).SpecialCells(xlCellTypeBlanks).EntireRow.Delete
   
   End Sub
-Sub reindexHorizontalDataPrompted()
+Public Sub reindexHorizontalDataPrompted(control As IRibbonControl)
 ' By Robert.Brownsmith@nhs.net
 
   'make declarations
@@ -887,16 +887,20 @@ Sub reindexHorizontalDataPrompted()
   Dim dataColNum As Long
   Dim dataRepeats As Long
   
-  indexColNum = Application.InputBox("how many index columns?")
-  dataColNum = Application.InputBox("how many columns in each repeat of the data?")
-  dataRepeats = Application.InputBox("how many times does the data repeat?")
+  indexColNum = Application.InputBox("how many index columns?", Type:=1)
+  dataColNum = Application.InputBox("how many columns in each repeat of the data?", Type:=1)
+  dataRepeats = Application.InputBox("how many times does the data repeat?", Type:=1)
   Set wb = ActiveWorkbook
     ' Set wb = ThisWorkbook
   Set ws = wb.ActiveSheet
       
   '  Initialization
   rowsUsed = ws.Cells(ws.Rows.count, "A").end(xlUp).Row
- 
+  
+  If indexColNum = False Or dataColNum = False Or dataRepeats = False Then
+    MsgBox "User Cancelled the input.", vbExclamation
+    Exit Sub
+  End If
   
   For i = 1 To dataRepeats
     With ws
@@ -915,6 +919,3 @@ Sub reindexHorizontalDataPrompted()
   ws.Columns(indexColNum + 1).SpecialCells(xlCellTypeBlanks).EntireRow.Delete
   
   End Sub
-
-
-
