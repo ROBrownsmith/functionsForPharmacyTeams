@@ -73,7 +73,7 @@ Sub **reindexHorizontalDataPrompted**()
 
 Macro to call the reindexHorizontalData Sub.
 
-The reindexHorizontalData Sub can be called from within other routines but this sub allows it to be called directly from the macro list and prompts the user for the inputs for the active sheet.
+The reindexHorizontalData Sub can be called from within other routines but this sub allows it to be called directly from the button in the custom FfPT ribbon, and prompts the user for the inputs for the active sheet.
 
 indexColNum is how many columns are to be contained in the index.
 
