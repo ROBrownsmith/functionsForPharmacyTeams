@@ -9,17 +9,16 @@ Please feel free to fork and improve the code.
 ## Add-on instructions.
 [Download](https://github.com/ROBrownsmith/functionsForPharmacyTeams/raw/refs/heads/main/Functions%20for%20Pharmacy%20teams.xlam) the add-in file and place in a local folder.
 
-If Developer tab is not available in the ribbon then:
+Within Excel:
 
-File/options/tick developer under Main Tabs and OK.
+File/options/Add-ins/Manage: Excel Add-ins/Go.../Browse... 
+to the add-in file and select OK.
 
 then
 
-Excel Add-ins/browse/select add-in file. 
-
 Restart Excel.
 
-You may need to unblock the add in if you get an "this file type is not supported in protected view" error: Follow the instructions from microsoft to unblock [here.](https://answers.microsoft.com/en-us/msoffice/forum/all/excel-error-this-file-type-is-not-supported-in/f8fc839e-a4fa-4625-8f1c-5fa9f68c98a0)
+You may need to unblock the add-in if you get an "this file type is not supported in protected view" error: Follow the instructions from microsoft to unblock [here.](https://answers.microsoft.com/en-us/msoffice/forum/all/excel-error-this-file-type-is-not-supported-in/f8fc839e-a4fa-4625-8f1c-5fa9f68c98a0)
 
 ## There are some simple user-defined functions in the module, and some classes.
 
