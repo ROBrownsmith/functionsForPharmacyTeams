@@ -118,6 +118,7 @@ Public Function AECScore(formDescCells As Range) As Integer
 ' By Robert.Brownsmith@nhs.net
 
 Dim aec As Integer
+Dim c As Range
 aec = 0
 
 ' need to fix this because if same drug appears twice it is counted twice.
@@ -340,6 +341,7 @@ Public Function addACBScore(formDescCells1 As Range) As Integer
 ' By Robert.Brownsmith@nhs.net
 
 Dim acb As Integer
+Dim c As Range
 acb = 0
 
 'list from https://www.acbcalc.com/medicines
